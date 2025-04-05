@@ -5,85 +5,199 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>OpenKimi Web UI</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Add Heroicons for sidebar icons -->
+    <script type="module" src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.esm.js"></script>
+    <script nomodule src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.js"></script>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script> <!-- Markdown Renderer -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script> 
     <link rel="stylesheet" href="style.css">
     <link rel="icon" href="https://i.postimg.cc/6qdQbvPf/open-kimi.png" type="image/png">
 </head>
-<body class="bg-gray-100 flex flex-col h-screen">
+<body class="flex h-screen overflow-hidden">
 
-    <div id="app" class="flex flex-col flex-grow max-w-4xl mx-auto w-full p-4">
+    <div id="app" class="flex w-full h-full">
 
-        <!-- Header -->
-        <header class="mb-4 flex items-center justify-between">
-            <div class="flex items-center space-x-2">
-                <img src="https://i.postimg.cc/6qdQbvPf/open-kimi.png" alt="OpenKimi Logo" class="h-10 w-10">
-                <h1 class="text-2xl font-bold text-gray-800">OpenKimi 对话</h1>
+        <!-- Sidebar -->
+        <aside class="w-16 flex flex-col items-center bg-white py-4 space-y-4 border-r border-gray-200">
+            <!-- Top Logo/Icon -->
+            <div class="p-2 bg-black text-white rounded-lg mb-4">
+                 <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M17.657 18.657A8 8 0 016.343 7.343m11.314 11.314a8 8 0 00-11.314-11.314m11.314 11.314L6.343 7.343" />
+                 </svg>
             </div>
-            <div class="text-sm text-gray-500">
-                API: {{ apiStatus }}
+            <!-- Icons -->
+            <div class="sidebar-icon active">
+                <ion-icon name="chatbubbles-outline" class="text-2xl"></ion-icon>
             </div>
-        </header>
+            <div class="sidebar-icon">
+                 <ion-icon name="folder-outline" class="text-2xl"></ion-icon>
+            </div>
+            <div class="sidebar-icon">
+                <ion-icon name="settings-outline" class="text-2xl"></ion-icon>
+            </div>
+            <div class="sidebar-icon">
+                <ion-icon name="extension-puzzle-outline" class="text-2xl"></ion-icon>
+            </div>
+            
+            <!-- Spacer -->
+            <div class="flex-grow"></div>
 
-        <!-- Chat History -->
-        <div class="chat-history flex-grow overflow-y-auto mb-4 p-4 bg-white rounded-lg shadow space-y-4" ref="chatHistory">
-            <div v-for="message in history" :key="message.id" :class="['flex', message.role === 'user' ? 'justify-end' : 'justify-start']">
-                <div :class="['p-3 rounded-lg max-w-lg', message.role === 'user' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-800']">
-                    <strong class="capitalize">{{ message.role }}:</strong>
-                    <div v.html="renderMarkdown(message.content)" class="prose prose-sm max-w-none"></div>
-                    <div v-if="message.loading" class="flex items-center justify-center mt-2">
-                        <svg class="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                          </svg>
+            <!-- Bottom Icons -->
+             <div class="sidebar-icon">
+                <ion-icon name="log-in-outline" class="text-2xl"></ion-icon> <!-- Login Placeholder -->
+            </div>
+             <div class="sidebar-icon">
+                <ion-icon name="tv-outline" class="text-2xl"></ion-icon> <!-- Some other icon -->
+            </div>
+             <div class="sidebar-icon">
+                <ion-icon name="phone-portrait-outline" class="text-2xl"></ion-icon> <!-- Another icon -->
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="flex-grow flex flex-col overflow-hidden">
+            
+            <!-- Initial View (Centered Logo, Input, Suggestions) -->
+            <div v-if="!chatStarted" class="flex flex-col items-center justify-center flex-grow p-4">
+                <!-- Kimi Logo -->
+                <div class="kimi-logo-gradient mb-12 select-none">
+                    KIMI
+                </div>
+
+                 <!-- Main Input Box -->
+                <div class="w-full max-w-3xl bg-white rounded-lg shadow-lg p-4 flex flex-col relative">
+                    <textarea 
+                        v-model="userInput"
+                        @keydown.enter.prevent="startOrSendMessage"
+                        placeholder="尽管问..."
+                        class="w-full p-2 mb-2 border-none focus:outline-none focus:ring-0 resize-none text-base"
+                        rows="3"
+                    ></textarea>
+                    <div class="flex items-center justify-between text-sm text-gray-500">
+                        <div class="flex items-center space-x-2">
+                            <button class="flex items-center px-2 py-1 border rounded hover:bg-gray-100">
+                                <ion-icon name="bulb-outline" class="mr-1"></ion-icon>
+                                k1.5 长思考
+                            </button>
+                             <button class="flex items-center px-2 py-1 border rounded hover:bg-gray-100">
+                                <ion-icon name="globe-outline" class="mr-1"></ion-icon>
+                                联网搜索
+                            </button>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <button class="p-1 rounded hover:bg-gray-100">
+                                <ion-icon name="cube-outline" class="text-xl"></ion-icon>
+                            </button>
+                             <button class="p-1 rounded hover:bg-gray-100">
+                                <ion-icon name="attach-outline" class="text-xl"></ion-icon>
+                            </button>
+                            <button @click="startOrSendMessage" :disabled="isLoading || userInput.trim() === ''" class="p-1 rounded hover:bg-gray-100 disabled:opacity-50">
+                                <ion-icon name="send-outline" class="text-xl"></ion-icon>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Suggestion Prompts -->
+                <div class="mt-8 grid grid-cols-1 md:grid-cols-3 gap-4 w-full max-w-3xl">
+                    <button @click="useSuggestion('PPT轻松搞定，秘诀在这！')" class="bg-white p-3 rounded-lg shadow hover:bg-gray-50 text-left text-sm text-gray-700 flex items-center space-x-2">
+                        <ion-icon name="easel-outline"></ion-icon>
+                        <span>PPT轻松搞定，秘诀在这！</span>
+                    </button>
+                     <button @click="useSuggestion('REM睡眠：拯救你的睡眠质量')" class="bg-white p-3 rounded-lg shadow hover:bg-gray-50 text-left text-sm text-gray-700 flex items-center space-x-2">
+                        <ion-icon name="cloudy-night-outline"></ion-icon>
+                        <span>REM睡眠：拯救你的睡眠质量</span>
+                    </button>
+                     <button @click="useSuggestion('AI时代，什么能力不可被替代？')" class="bg-white p-3 rounded-lg shadow hover:bg-gray-50 text-left text-sm text-gray-700 flex items-center space-x-2">
+                        <ion-icon name="sparkles-outline"></ion-icon>
+                        <span>AI时代，什么能力不可被替代？</span>
+                    </button>
+                    <button @click="useSuggestion('《诗经》中的我命由我不由天')" class="bg-white p-3 rounded-lg shadow hover:bg-gray-50 text-left text-sm text-gray-700 flex items-center space-x-2">
+                        <ion-icon name="book-outline"></ion-icon>
+                        <span>《诗经》中的我命由我不由天</span>
+                    </button>
+                    <button @click="useSuggestion('为什么澳洲不愿改造内陆荒漠？')" class="bg-white p-3 rounded-lg shadow hover:bg-gray-50 text-left text-sm text-gray-700 flex items-center space-x-2">
+                        <ion-icon name="earth-outline"></ion-icon>
+                        <span>为什么澳洲不愿改造内陆荒漠？</span>
+                    </button>
+                     <button class="bg-white p-3 rounded-lg shadow hover:bg-gray-50 text-left text-sm text-gray-700 flex items-center space-x-2 opacity-50 cursor-not-allowed">
+                        <ion-icon name="alert-circle-outline"></ion-icon>
+                        <span>登录一下 和 kimi一起登月</span>
+                    </button>
+                </div>
+
+            </div>
+
+            <!-- Chat View (Shown after first message) -->
+            <div v-if="chatStarted" class="flex flex-col flex-grow p-4 overflow-hidden">
+                <!-- Header (Optional, can be simpler here) -->
+                <header class="mb-4 flex items-center justify-between border-b pb-2">
+                    <h1 class="text-xl font-semibold text-gray-700">对话中</h1>
+                     <div class="text-sm text-gray-500">
+                        API: {{ apiStatus }} (<button @click="checkApiStatus" class="text-blue-500 hover:underline">刷新</button>)
+                     </div>
+                </header>
+
+                <!-- Chat History -->
+                <div class="chat-history flex-grow overflow-y-auto mb-4 pr-2 space-y-4" ref="chatHistory">
+                     <div v-for="message in history" :key="message.id" :class="['flex', message.role === 'user' ? 'justify-end' : 'justify-start']">
+                        <div :class="['p-3 rounded-lg max-w-xl shadow', message.role === 'user' ? 'bg-blue-500 text-white' : 'bg-white text-gray-800']">
+                            <!-- Role can be omitted or styled differently in chat view -->
+                             <!-- <strong class="capitalize">{{ message.role }}:</strong> -->
+                            <div v.html="renderMarkdown(message.content)" class="prose prose-sm max-w-none"></div>
+                        </div>
+                    </div>
+                    <!-- Loading Indicator -->
+                    <div v-if="isLoading" class="flex justify-start">
+                        <div class="p-3 rounded-lg max-w-xl bg-white text-gray-800 shadow">
+                            <div class="flex items-center justify-center">
+                                <svg class="animate-spin h-5 w-5 text-gray-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                <span class="ml-2 text-sm text-gray-500">思考中...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Input Area (Similar to initial view's input box) -->
+                 <div class="w-full bg-white rounded-lg shadow-lg p-4 flex flex-col relative border border-gray-200">
+                    <textarea 
+                        v-model="userInput"
+                        @keydown.enter.prevent="startOrSendMessage"
+                        placeholder="继续提问..."
+                        class="w-full p-2 mb-2 border-none focus:outline-none focus:ring-0 resize-none text-base"
+                        rows="3"
+                    ></textarea>
+                    <div class="flex items-center justify-between text-sm text-gray-500">
+                        <div class="flex items-center space-x-2">
+                            <!-- Simplified buttons for chat view -->
+                            <button @click="resetChat" :disabled="isLoading" class="flex items-center px-2 py-1 border rounded hover:bg-gray-100 disabled:opacity-50">
+                                <ion-icon name="refresh-outline" class="mr-1"></ion-icon>
+                                新对话
+                            </button>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <button class="p-1 rounded hover:bg-gray-100">
+                                <ion-icon name="cube-outline" class="text-xl"></ion-icon>
+                            </button>
+                             <button class="p-1 rounded hover:bg-gray-100">
+                                <ion-icon name="attach-outline" class="text-xl"></ion-icon>
+                            </button>
+                            <button @click="startOrSendMessage" :disabled="isLoading || userInput.trim() === ''" class="p-1 rounded hover:bg-gray-100 disabled:opacity-50">
+                                <ion-icon name="send-outline" class="text-xl"></ion-icon>
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
-             <!-- Loading Indicator -->
-             <div v-if="isLoading" class="flex justify-start">
-                <div class="p-3 rounded-lg max-w-lg bg-gray-200 text-gray-800">
-                    <strong class="capitalize">assistant:</strong>
-                    <div class="flex items-center justify-center mt-2">
-                        <svg class="animate-spin h-5 w-5 text-gray-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                          </svg>
-                          <span class="ml-2 text-sm">思考中...</span>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Input Area -->
-        <div class="input-area flex space-x-2">
-            <textarea 
-                v-model="userInput" 
-                @keydown.enter.prevent="sendMessage" 
-                placeholder="输入你的问题... (Ctrl+Enter 换行)" 
-                class="flex-grow p-2 border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                rows="2"
-            ></textarea>
-            <button 
-                @click="sendMessage" 
-                :disabled="isLoading || userInput.trim() === ''" 
-                class="px-4 py-2 bg-blue-500 text-white rounded-lg shadow hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed">
-                发送
-            </button>
-            <button 
-                @click="resetChat" 
-                :disabled="isLoading" 
-                class="px-4 py-2 bg-red-500 text-white rounded-lg shadow hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed">
-                重置
-            </button>
-        </div>
-        
-        <!-- API URL Input -->
-        <div class="mt-2 text-sm text-gray-600 flex items-center">
-            <label for="api-url" class="mr-2">API URL:</label>
-            <input id="api-url" type="text" v-model="apiUrl" placeholder="http://localhost:8000" class="flex-grow p-1 border rounded text-xs">
-            <button @click="checkApiStatus" class="ml-2 px-2 py-1 bg-gray-300 text-xs rounded hover:bg-gray-400">检查</button>
-        </div>
-
+            
+             <!-- Footer (Optional) -->
+            <footer class="text-center text-xs text-gray-400 p-2 border-t mt-auto">
+                © 2024 OpenKimi Clone | API URL: {{ apiUrl }}
+            </footer>
+        </main>
     </div>
 
     <script src="app.js"></script>

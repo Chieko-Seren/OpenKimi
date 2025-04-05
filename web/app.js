@@ -8,6 +8,7 @@ const App = {
         const apiUrl = ref(localStorage.getItem('openKimiApiUrl') || 'http://127.0.0.1:8000'); // Default API URL
         const apiStatus = ref('未知');
         const chatHistory = ref(null); // Ref for the chat history div
+        const chatStarted = ref(false); // New state variable
 
         // --- API Interaction ---
         const checkApiStatus = async () => {
@@ -23,15 +24,27 @@ const App = {
                 } else {
                     apiStatus.value = `错误: ${data.detail || '引擎未初始化'}`;
                 }
-                // Save API URL on successful check
                 localStorage.setItem('openKimiApiUrl', apiUrl.value);
             } catch (error) {
                 console.error('API Status Check Error:', error);
-                apiStatus.value = `连接失败: ${error.message}`;
+                apiStatus.value = `连接失败`; // Simplified error message
             }
         };
 
+        // Combined function for sending message or starting chat
+        const startOrSendMessage = async () => {
+             if (isLoading.value || userInput.value.trim() === '') return;
+
+             if (!chatStarted.value) {
+                chatStarted.value = true;
+                // Need nextTick to ensure chat view elements are rendered before sending
+                await nextTick(); 
+            }
+            sendMessage();
+        };
+
         const sendMessage = async () => {
+            // This function now assumes chatStarted is true
             if (isLoading.value || userInput.value.trim() === '') return;
 
             const messageContent = userInput.value.trim();
@@ -41,17 +54,15 @@ const App = {
             // Add user message to history
             const userMessage = { id: Date.now(), role: 'user', content: messageContent };
             history.value.push(userMessage);
-            scrollToBottom(); // Scroll after adding user message
+            scrollToBottom(); 
 
             try {
-                // Prepare OpenAI-like message format
-                const messages = history.value.map(msg => ({ role: msg.role, content: msg.content }));
-                // Make sure the last message is the current user input
-                if (messages.length === 0 || messages[messages.length - 1].role !== 'user') {
-                    messages.push({ role: 'user', content: messageContent });
-                }
+                // Prepare messages for API (include system messages if any were ingested via API)
+                // Note: The current API server resets on each call, so history building here is
+                // mostly for the *next* call if the server state were preserved.
+                const messagesForApi = history.value.map(msg => ({ role: msg.role, content: msg.content }));
                 
-                console.log("Sending messages:", JSON.stringify(messages));
+                console.log("Sending messages to API:", JSON.stringify(messagesForApi));
 
                 const response = await fetch(`${apiUrl.value}/v1/chat/completions`, {
                     method: 'POST',
@@ -59,9 +70,8 @@ const App = {
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({
-                        model: 'openkimi-model', // Model name is currently ignored by the server
-                        messages: messages,
-                        // Add other parameters like temperature if needed
+                        model: 'openkimi-model', 
+                        messages: messagesForApi,
                     }),
                 });
 
@@ -71,11 +81,11 @@ const App = {
                 }
 
                 const data = await response.json();
-                console.log("Received data:", data);
+                console.log("Received data from API:", data);
                 
                 if (data.choices && data.choices.length > 0 && data.choices[0].message) {
                     const assistantMessage = { 
-                        id: Date.now() + 1, // Ensure unique ID
+                        id: Date.now() + 1, 
                         role: 'assistant', 
                         content: data.choices[0].message.content.trim() 
                     };
@@ -86,7 +96,6 @@ const App = {
 
             } catch (error) {
                 console.error('Send Message Error:', error);
-                // Add error message to chat
                 history.value.push({
                     id: Date.now() + 1,
                     role: 'assistant',
@@ -94,7 +103,7 @@ const App = {
                 });
             } finally {
                 isLoading.value = false;
-                scrollToBottom(); // Scroll after receiving response
+                scrollToBottom(); 
             }
         };
 
@@ -102,7 +111,8 @@ const App = {
             history.value = [];
             userInput.value = '';
             isLoading.value = false;
-            // Optionally ping the server's reset if it existed
+            chatStarted.value = false; // Go back to initial view
+            // API server reset happens automatically on next request in current implementation
         };
 
         // --- UI Helpers ---
@@ -116,15 +126,27 @@ const App = {
         };
 
         const renderMarkdown = (content) => {
+             // Ensure content is a string
+            const textContent = String(content || '');
             if (typeof marked === 'undefined') {
-                console.error('Marked library not loaded!');
-                // Simple rendering as fallback
-                return content.replace(/\n/g, '<br>');
+                console.warn('Marked library not loaded!');
+                return textContent.replace(/\n/g, '<br>');
             }
-            // Basic sanitization (consider a more robust library like DOMPurify for production)
-            const dirtyHtml = marked.parse(content);
-            // VERY basic link target setting
-            return dirtyHtml.replace(/<a href/g, '<a target="_blank" rel="noopener noreferrer" href');
+            try {
+                 // Basic sanitization (consider DOMPurify for production)
+                const dirtyHtml = marked.parse(textContent);
+                 // Replace <a href...> with <a target="_blank"...
+                return dirtyHtml.replace(/<a\s+(?:[^>]*?\s+)?href="([^"*]*)"/g, '<a target="_blank" rel="noopener noreferrer" href="$1"');
+            } catch (e) {
+                console.error("Markdown rendering error:", e);
+                return textContent.replace(/\n/g, '<br>'); // Fallback
+            }
+        };
+
+        const useSuggestion = (suggestion) => {
+            userInput.value = suggestion;
+            // Automatically start the chat and send the message
+            startOrSendMessage();
         };
 
         // --- Lifecycle Hooks ---
@@ -139,10 +161,13 @@ const App = {
             apiUrl,
             apiStatus,
             chatHistory,
-            sendMessage,
+            chatStarted, // Expose new state
+            sendMessage, // Keep original for internal use
+            startOrSendMessage, // Use this for UI buttons/enter key
             resetChat,
             checkApiStatus,
-            renderMarkdown
+            renderMarkdown,
+            useSuggestion // Expose suggestion handler
         };
     }
 };

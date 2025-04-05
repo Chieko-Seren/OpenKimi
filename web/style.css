@@ -1,9 +1,44 @@
 /* Add any custom styles here if needed */
 
+/* Set the main background color */
+body {
+    background-color: #f7f7f9; /* Light purplish-gray from Kimi */
+}
+
+/* Kimi Logo Gradient */
+.kimi-logo-gradient {
+    background: linear-gradient(to right, #6366f1, #8b5cf6); /* Indigo to Purple */
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    font-weight: bold;
+    font-size: 4rem; /* Adjust size as needed */
+}
+
+/* Sidebar Icon Styling (basic) */
+.sidebar-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.sidebar-icon:hover {
+    background-color: #e5e7eb; /* gray-200 */
+}
+
+.sidebar-icon.active {
+    background-color: #d1d5db; /* gray-300 */
+}
+
 /* Ensure chat history scrolls */
 .chat-history {
-    /* You might need to adjust the max-height based on your layout */
-    /* max-height: calc(100vh - 200px); */ 
+    /* Adjust based on layout, might need fine-tuning */
+    max-height: calc(100vh - 250px); 
 }
 
 /* Style for rendered Markdown */
