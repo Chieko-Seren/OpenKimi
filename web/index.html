@@ -10,6 +10,8 @@
     <script nomodule src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.js"></script>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script> 
+    <!-- 加载插件系统 -->
+    <script src="plugins.js"></script>
     <link rel="stylesheet" href="style.css">
     <link rel="icon" href="https://i.postimg.cc/6qdQbvPf/open-kimi.png" type="image/png">
 </head>
@@ -119,8 +121,82 @@
             <!-- Plugins Panel -->
             <div v-if="activeTab === 'plugins'" class="p-4">
                 <h2 class="text-lg font-semibold mb-4">插件</h2>
-                <div class="text-sm text-gray-500">
-                    敬请期待插件功能...
+                
+                <!-- 插件管理界面 -->
+                <div class="space-y-4">
+                    <!-- 安装新插件 -->
+                    <div class="border rounded p-3 bg-gray-50">
+                        <h3 class="font-medium text-sm mb-2">安装新插件</h3>
+                        <div class="flex space-x-2">
+                            <input 
+                                v-model="pluginUrl" 
+                                type="text" 
+                                placeholder="输入插件URL" 
+                                class="flex-1 p-2 text-sm border rounded focus:ring-blue-500 focus:border-blue-500"
+                                :disabled="isInstallingPlugin"
+                            />
+                            <button 
+                                @click="installPlugin" 
+                                class="bg-blue-500 text-white px-3 py-1 rounded text-sm hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                                :disabled="isInstallingPlugin || !pluginUrl.trim()"
+                            >
+                                <span v-if="isInstallingPlugin">安装中...</span>
+                                <span v-else>安装</span>
+                            </button>
+                        </div>
+                        <p class="text-xs text-gray-500 mt-1">
+                            输入插件的JavaScript文件URL，例如: https://example.com/plugins/my-plugin.js
+                        </p>
+                    </div>
+                    
+                    <!-- 已安装插件列表 -->
+                    <div>
+                        <div class="flex justify-between items-center mb-2">
+                            <h3 class="font-medium text-sm">已安装插件</h3>
+                            <button 
+                                @click="refreshPluginList" 
+                                class="text-xs text-blue-500 hover:underline"
+                                title="刷新插件列表"
+                            >
+                                刷新
+                            </button>
+                        </div>
+                        
+                        <div v-if="installedPlugins.length === 0" class="text-sm text-gray-500 p-3 border rounded bg-white">
+                            暂无已安装的插件
+                        </div>
+                        
+                        <div v-else class="space-y-2">
+                            <div 
+                                v-for="plugin in installedPlugins" 
+                                :key="plugin.id" 
+                                class="flex justify-between items-center p-3 border rounded bg-white"
+                            >
+                                <div>
+                                    <div class="font-medium text-sm">{{ plugin.name }}</div>
+                                    <div class="text-xs text-gray-500">{{ plugin.description || '无描述' }}</div>
+                                    <div class="text-xs text-gray-400">ID: {{ plugin.id }}</div>
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <div class="text-xs" :class="plugin.enabled ? 'text-green-500' : 'text-gray-400'">
+                                        {{ plugin.enabled ? '已启用' : '已禁用' }}
+                                    </div>
+                                    <button 
+                                        @click="togglePlugin(plugin.id)" 
+                                        class="text-xs px-2 py-1 rounded"
+                                        :class="plugin.enabled ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-green-100 text-green-700 hover:bg-green-200'"
+                                    >
+                                        {{ plugin.enabled ? '禁用' : '启用' }}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 开发者信息 -->
+                    <div class="text-xs text-gray-500 border-t pt-2 mt-4">
+                        <p>开发者? 查看 <a href="https://github.com/yourusername/openkimi/wiki/plugins" target="_blank" class="text-blue-500 hover:underline">插件开发文档</a> 了解如何创建自定义插件。</p>
+                    </div>
                 </div>
             </div>
         </div>
@@ -332,5 +408,54 @@
     </div>
 
     <script src="app.js"></script>
+    <!-- 初始化插件系统 -->
+    <script>
+        // 在Vue应用挂载后初始化插件系统
+        document.addEventListener('DOMContentLoaded', () => {
+            // 假设Vue应用实例可通过window._vueApp访问
+            if (window._vueApp) {
+                // 创建插件系统实例
+                window.pluginSystem = new PluginSystem(window._vueApp);
+                console.log('插件系统已初始化');
+                
+                // 加载示例插件
+                window.pluginSystem.loadFromUrl('./plugins/sample-plugin.js')
+                    .then(success => {
+                        if (success) {
+                            console.log('示例插件加载成功');
+                        } else {
+                            console.warn('示例插件加载失败');
+                        }
+                    })
+                    .catch(err => {
+                        console.error('加载示例插件时出错:', err);
+                    });
+            } else {
+                console.warn('无法找到Vue应用实例，插件系统初始化延迟');
+                // 尝试稍后再次初始化
+                setTimeout(() => {
+                    if (window._vueApp) {
+                        window.pluginSystem = new PluginSystem(window._vueApp);
+                        console.log('插件系统已延迟初始化');
+                        
+                        // 延迟加载示例插件
+                        window.pluginSystem.loadFromUrl('./plugins/sample-plugin.js')
+                            .then(success => {
+                                if (success) {
+                                    console.log('示例插件加载成功（延迟）');
+                                } else {
+                                    console.warn('示例插件加载失败（延迟）');
+                                }
+                            })
+                            .catch(err => {
+                                console.error('延迟加载示例插件时出错:', err);
+                            });
+                    } else {
+                        console.error('无法初始化插件系统：找不到Vue应用实例');
+                    }
+                }, 1000);
+            }
+        });
+    </script>
 </body>
 </html> 

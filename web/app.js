@@ -20,6 +20,11 @@ const App = {
         const searchResults = ref([]); // 搜索结果
         const sidebarOpen = ref(false); // 侧边菜单打开状态
         const activeTab = ref('chat'); // 当前激活的侧边栏标签
+        
+        // 插件相关状态
+        const installedPlugins = ref([]); // 已安装的插件列表
+        const pluginUrl = ref(''); // 输入的插件URL
+        const isInstallingPlugin = ref(false); // 插件安装状态
 
         // --- API Interaction ---
         const checkApiStatus = async () => {
@@ -358,7 +363,20 @@ const App = {
             // This function now assumes chatStarted is true
             if (isLoading.value || userInput.value.trim() === '') return;
 
-            const messageContent = userInput.value.trim();
+            let messageContent = userInput.value.trim();
+            
+            // 使用插件系统的beforeSendMessage钩子处理消息
+            if (window.pluginSystem) {
+                try {
+                    const processed = await window.pluginSystem.triggerHook('beforeSendMessage', messageContent);
+                    if (processed !== undefined) {
+                        messageContent = processed;
+                    }
+                } catch (e) {
+                    console.error('插件处理消息时出错:', e);
+                }
+            }
+            
             isLoading.value = true;
             userInput.value = ''; // Clear input
 
@@ -435,10 +453,24 @@ const App = {
                 console.log("Received data from API:", data);
                 
                 if (data.choices && data.choices.length > 0 && data.choices[0].message) {
+                    let responseContent = data.choices[0].message.content.trim();
+                    
+                    // 使用插件系统的afterReceiveMessage钩子处理响应
+                    if (window.pluginSystem) {
+                        try {
+                            const processed = await window.pluginSystem.triggerHook('afterReceiveMessage', responseContent);
+                            if (processed !== undefined) {
+                                responseContent = processed;
+                            }
+                        } catch (e) {
+                            console.error('插件处理响应时出错:', e);
+                        }
+                    }
+                    
                     const assistantMessage = { 
                         id: Date.now() + 1, 
                         role: 'assistant', 
-                        content: data.choices[0].message.content.trim() 
+                        content: responseContent
                     };
                     history.value.push(assistantMessage);
                 } else {
@@ -502,10 +534,73 @@ const App = {
             startOrSendMessage();
         };
 
+        // 插件相关方法
+        const refreshPluginList = () => {
+            if (window.pluginSystem) {
+                installedPlugins.value = window.pluginSystem.getAllPlugins();
+            } else {
+                console.warn('无法刷新插件列表：插件系统未初始化');
+            }
+        };
+
+        const installPlugin = async () => {
+            if (!pluginUrl.value.trim()) {
+                alert('请输入有效的插件URL');
+                return;
+            }
+
+            isInstallingPlugin.value = true;
+            try {
+                if (!window.pluginSystem) {
+                    throw new Error('插件系统未初始化');
+                }
+
+                const success = await window.pluginSystem.loadFromUrl(pluginUrl.value.trim());
+                if (success) {
+                    pluginUrl.value = ''; // 清空输入
+                    refreshPluginList(); // 刷新插件列表
+                    alert('插件安装成功');
+                } else {
+                    alert('插件安装失败');
+                }
+            } catch (error) {
+                console.error('安装插件出错:', error);
+                alert(`插件安装出错: ${error.message}`);
+            } finally {
+                isInstallingPlugin.value = false;
+            }
+        };
+
+        const togglePlugin = (pluginId) => {
+            if (!window.pluginSystem) {
+                alert('插件系统未初始化');
+                return;
+            }
+
+            const plugin = installedPlugins.value.find(p => p.id === pluginId);
+            if (!plugin) return;
+
+            if (plugin.enabled) {
+                window.pluginSystem.disable(pluginId);
+            } else {
+                window.pluginSystem.enable(pluginId);
+            }
+            
+            refreshPluginList(); // 刷新列表以更新状态
+        };
+
         // --- Lifecycle Hooks ---
         onMounted(() => {
             checkApiStatus(); // Check API status on load
             fetchSuggestions(); // Fetch suggestions on load
+            
+            // 延迟检查插件系统并初始化插件列表
+            setTimeout(() => {
+                if (window.pluginSystem) {
+                    refreshPluginList();
+                    console.log('已从插件系统获取插件列表');
+                }
+            }, 1500); // 给足够时间让插件系统初始化
         });
 
         return {
@@ -540,9 +635,19 @@ const App = {
             performWebSearch,
             toggleSidebar,
             setActiveTab,
-            searchOnlyWeb
+            searchOnlyWeb,
+            // 插件相关功能
+            installedPlugins,
+            pluginUrl,
+            isInstallingPlugin,
+            installPlugin,
+            refreshPluginList,
+            togglePlugin
         };
     }
 };
 
-createApp(App).mount('#app'); 
+// 修改应用挂载方式，保存应用实例到全局变量
+const app = createApp(App);
+window._vueApp = app; // 保存Vue应用实例到全局变量
+app.mount('#app'); 
