@@ -137,7 +137,7 @@
                         <div :class="['p-3 rounded-lg max-w-xl shadow', message.role === 'user' ? 'bg-blue-500 text-white' : 'bg-white text-gray-800']">
                             <!-- Role can be omitted or styled differently in chat view -->
                              <!-- <strong class="capitalize">{{ message.role }}:</strong> -->
-                            <div v.html="renderMarkdown(message.content)" class="prose prose-sm max-w-none"></div>
+                            <div v-html="renderMarkdown(message.content)" class="prose prose-sm max-w-none"></div>
                         </div>
                     </div>
                     <!-- Loading Indicator -->
