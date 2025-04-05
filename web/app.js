@@ -16,20 +16,24 @@ const App = {
         const checkApiStatus = async () => {
             apiStatus.value = '检查中...';
             try {
+                console.log(`正在检查API状态: ${apiUrl.value}/health`);
                 const response = await fetch(`${apiUrl.value}/health`);
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
                 const data = await response.json();
+                console.log('API 状态响应:', data);
+                
                 if (data.status === 'ok' && data.engine_initialized) {
                     apiStatus.value = `正常 (${data.model_name})`;
                 } else {
                     apiStatus.value = `错误: ${data.detail || '引擎未初始化'}`;
+                    console.error('API引擎初始化失败:', data);
                 }
                 localStorage.setItem('openKimiApiUrl', apiUrl.value);
             } catch (error) {
                 console.error('API Status Check Error:', error);
-                apiStatus.value = `连接失败`; // Simplified error message
+                apiStatus.value = `连接失败 (${error.message})`; // 更详细的错误信息
             }
         };
 

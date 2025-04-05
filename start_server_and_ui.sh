@@ -71,6 +71,7 @@ if [ ! -f "$CONFIG_FILE" ]; then
     exit 1
 fi
 
+
 # --- Start API Server in Background --- 
 API_URL="http://$HOST:$PORT"
 echo "Starting OpenKimi API server..."

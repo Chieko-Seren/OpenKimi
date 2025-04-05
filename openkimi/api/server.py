@@ -20,6 +20,7 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..
 sys.path.insert(0, project_root)
 
 from openkimi import KimiEngine
+from openkimi.utils.llm_interface import get_llm_interface
 from openkimi.api.models import ChatCompletionRequest, ChatCompletionResponse, ChatMessage, ChatCompletionChoice, CompletionUsage
 
 app = FastAPI(
@@ -46,7 +47,18 @@ def initialize_engine(args):
     """Initializes the global KimiEngine based on args."""
     global engine, engine_model_name
     print("Initializing Kimi Engine for API server...")
+    
+    if not args.config or not os.path.exists(args.config):
+        print(f"ERROR: 配置文件不存在: {args.config}")
+        engine = None
+        return
+        
     try:
+        print(f"正在使用配置文件: {args.config}")
+        with open(args.config, 'r') as f:
+            config_content = f.read()
+            print(f"配置文件内容: {config_content}")
+            
         engine = KimiEngine(
             config_path=args.config,
             # You might want to load LLM/processor/RAG configs directly here too
@@ -64,9 +76,11 @@ def initialize_engine(args):
         if engine.llm_interface is None:
             print("WARNING: engine.llm_interface is None after initialization!")
             # 尝试重新初始化llm_interface
+            print(f"尝试重新初始化LLM接口，配置: {engine.config['llm']}")
             engine.llm_interface = get_llm_interface(engine.config["llm"])
             if engine.llm_interface is None:
                 print("CRITICAL: Failed to recreate llm_interface!")
+                engine = None
                 
     except Exception as e:
         print(f"FATAL: Failed to initialize KimiEngine: {e}")
