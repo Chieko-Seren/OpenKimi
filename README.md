@@ -21,7 +21,7 @@ OpenKimi 是首个面向开发者的**无限上下文LLM支持框架**，旨在�
 - ✅ **跨模型的统一接口**：支持主流LLM（如 LLaMA、GPT 等），无需为不同模型调整代码。
 - ✅ **实时动态上下文优化**：根据输入动态调整上下文窗口，确保性能与效率的完美平衡。
 
-OpenKimi 的目标是突破传统 LLM 的“上下文监狱”，让模型能够真正理解完整的人类知识体系，从单一对话到整个知识图谱，助力开发者构建更智能、更具洞察力的应用。
+OpenKimi 的目标是突破传统 LLM 的"上下文监狱"，让模型能够真正理解完整的人类知识体系，从单一对话到整个知识图谱，助力开发者构建更智能、更具洞察力的应用。
 
 ## 🌍 为什么选择 OpenKimi？
 - **无限可能**：无论是分析整部《战争与和平》、理解复杂的技术文档，还是推理跨领域的知识，OpenKimi 都能胜任。
@@ -91,3 +91,114 @@ OpenKimi 是社区驱动的开源项目，我们拥抱星辰大海，期待您�
 ## 📬 联系我们
 - **GitHub Issues**： https://github.com/Chieko-Seren/OpenKimi/issues
 - **邮箱**：chieko.seren@icloud.com
+
+## 🔍 项目结构
+
+```
+openkimi/
+├── core/              # 核心功能实现
+│   ├── engine.py      # 主引擎
+│   ├── processor.py   # 文本处理器
+│   ├── rag.py         # RAG管理
+│   └── framework.py   # 框架生成
+├── utils/             # 工具类
+│   └── llm_interface.py # LLM接口
+└── __init__.py        # 包初始化
+```
+
+## 🧠 核心功能详解
+
+### 文本处理和信息熵计算
+OpenKimi 使用信息熵来评估文本块的信息密度，这使得系统能够智能地识别哪些内容值得保留在主上下文中，哪些可以暂时存储到 RAG 中。
+
+```python
+from openkimi.core import TextProcessor
+
+processor = TextProcessor(batch_size=512)
+batches = processor.split_into_batches(long_text)
+useful, less_useful = processor.classify_by_entropy(batches)
+```
+
+### RAG 管理
+非关键文本会被摘要并存储到 RAG 系统中，需要时可以动态检索回来：
+
+```python
+from openkimi.core import RAGManager
+from openkimi.utils.llm_interface import get_llm_interface
+
+llm = get_llm_interface({"type": "dummy"})
+rag = RAGManager(llm)
+summaries = rag.batch_store(less_useful_texts)
+relevant_texts = rag.retrieve("相关查询")
+```
+
+### 框架生成
+将复杂问题分解为步骤，确保解决方案的质量：
+
+```python
+from openkimi.core import FrameworkGenerator
+
+framework_gen = FrameworkGenerator(llm)
+solution_framework = framework_gen.generate_framework("复杂问题")
+solution = framework_gen.generate_solution("复杂问题", solution_framework)
+```
+
+## 🚀 使用案例
+
+### 1. 处理超长文档
+
+```python
+from openkimi import KimiEngine
+
+engine = KimiEngine()
+with open("book.txt", "r") as f:
+    engine.ingest(f.read())
+
+# 可以处理远超传统LLM上下文窗口的文档
+response = engine.chat("分析这本书的主题和写作风格")
+print(response)
+```
+
+### 2. 统一处理不同LLM
+
+```python
+# 使用本地模型
+engine1 = KimiEngine(llm="./models/my_model")
+
+# 使用API
+import os
+os.environ["LLM_API_KEY"] = "your-api-key"
+engine2 = KimiEngine(config_path="config_api.json")
+```
+
+## ⚙️ 配置选项
+
+OpenKimi 支持丰富的配置选项，主要包括：
+
+1. **LLM 设置**：选择模型类型，设置路径或API密钥
+2. **处理器设置**：调整批次大小和信息熵阈值
+3. **RAG 设置**：控制摘要和检索行为
+4. **框架设置**：定制问题解决框架的生成方式
+
+示例配置文件:
+```json
+{
+    "llm": {
+        "type": "api",
+        "api_key": "your-api-key",
+        "api_url": "https://api.example.com/v1/completions"
+    },
+    "processor": {
+        "batch_size": 1024,
+        "entropy_threshold": 2.5
+    }
+}
+```
+
+## 🌈 未来计划
+
+- [ ] 添加更多 LLM 后端支持
+- [ ] 实现向量数据库集成，提升 RAG 性能
+- [ ] 添加更细粒度的信息熵评估方式
+- [ ] 支持多模态输入
+- [ ] 增强跨文档推理能力

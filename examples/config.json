@@ -1,0 +1,18 @@
+{
+    "llm": {
+        "type": "dummy",
+        "model_path": null,
+        "api_key": null,
+        "api_url": null
+    },
+    "processor": {
+        "batch_size": 512,
+        "entropy_threshold": 3.0
+    },
+    "rag": {
+        "summary_max_length": 100
+    },
+    "framework": {
+        "max_steps": 5
+    }
+} 
