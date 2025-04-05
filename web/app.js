@@ -14,6 +14,12 @@ const App = {
         const fileInput = ref(null); // Ref for file input element
         const uploadedFiles = ref([]); // 存储已上传的文件
         const isUploading = ref(false); // 文件上传中状态
+        const useCoT = ref(false); // 是否使用CoT(Chain of Thought)长思考
+        const useWebSearch = ref(false); // 是否使用网络搜索
+        const isSearching = ref(false); // 网络搜索中状态
+        const searchResults = ref([]); // 搜索结果
+        const sidebarOpen = ref(false); // 侧边菜单打开状态
+        const activeTab = ref('chat'); // 当前激活的侧边栏标签
 
         // --- API Interaction ---
         const checkApiStatus = async () => {
@@ -201,6 +207,141 @@ const App = {
             }
         };
 
+        // 切换长思考模式
+        const toggleCoT = () => {
+            useCoT.value = !useCoT.value;
+        };
+
+        // 切换网络搜索模式
+        const toggleWebSearch = () => {
+            useWebSearch.value = !useWebSearch.value;
+        };
+
+        // 更新执行网页搜索功能
+        const performWebSearch = async () => {
+            if (!userInput.value.trim() || isSearching.value) {
+                return;
+            }
+
+            try {
+                isSearching.value = true;
+                searchResults.value = [];
+                const searchQuery = userInput.value.trim();
+                
+                // 更新聊天历史，显示搜索中消息
+                history.value.push({
+                    role: "user",
+                    content: `搜索: ${searchQuery}`
+                });
+                
+                history.value.push({
+                    role: "assistant",
+                    content: `<div class="search-message">正在搜索 "${searchQuery}"<span class="thinking-dots"><span>.</span><span>.</span><span>.</span></span></div>`
+                });
+                
+                // 滚动到底部
+                setTimeout(scrollToBottom, 100);
+                
+                const response = await fetch(`${apiUrl.value}/v1/web_search`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        query: searchQuery
+                    }),
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`搜索请求失败: ${response.status}`);
+                }
+                
+                const searchData = await response.json();
+                
+                // 更新搜索结果
+                searchResults.value = searchData.results;
+                
+                // 更新最后一条消息，替换"搜索中"为实际结果
+                if (history.value.length > 0) {
+                    // 删除"搜索中"的消息
+                    history.value.pop();
+                    
+                    // 添加搜索结果消息
+                    let searchResultsHTML = `<div class="search-message">搜索 "${searchQuery}" 的结果:</div><div class="search-results">`;
+                    
+                    searchData.results.forEach(result => {
+                        searchResultsHTML += `
+                            <div class="search-result-item">
+                                <div class="search-result-title"><a href="${result.link}" target="_blank">${result.title}</a></div>
+                                <div class="search-result-link">${result.link}</div>
+                                <div class="search-result-snippet">${result.snippet}</div>
+                            </div>
+                        `;
+                    });
+                    
+                    searchResultsHTML += '</div>';
+                    
+                    history.value.push({
+                        role: "assistant",
+                        content: searchResultsHTML
+                    });
+                }
+                
+                // 清空输入框，为用户提问准备
+                userInput.value = '';
+                
+                setTimeout(scrollToBottom, 100);
+            } catch (error) {
+                console.error('搜索出错:', error);
+                // 更新最后一条消息，显示错误
+                if (history.value.length > 0 && history.value[history.value.length - 1].role === 'assistant') {
+                    history.value.pop(); // 删除"搜索中"消息
+                    history.value.push({
+                        role: "assistant",
+                        content: `<div class="search-message error">搜索失败: ${error.message}</div>`
+                    });
+                }
+            } finally {
+                isSearching.value = false;
+                setTimeout(scrollToBottom, 100);
+            }
+        };
+
+        // 只执行网络搜索，不发送消息
+        const searchOnlyWeb = async () => {
+            if (!userInput.value.trim() || isSearching.value) {
+                return;
+            }
+
+            try {
+                isSearching.value = true;
+                searchResults.value = [];
+                
+                // 如果还没有开始聊天，先开始
+                if (!chatStarted.value) {
+                    chatStarted.value = true;
+                }
+                
+                await performWebSearch();
+                
+                // 不清空输入框，方便用户基于搜索结果调整问题
+            } catch (error) {
+                console.error('独立搜索出错:', error);
+            } finally {
+                isSearching.value = false;
+            }
+        };
+
+        // 切换侧边栏
+        const toggleSidebar = () => {
+            sidebarOpen.value = !sidebarOpen.value;
+        };
+
+        // 设置活动标签
+        const setActiveTab = (tab) => {
+            activeTab.value = tab;
+        };
+
         // Combined function for sending message or starting chat
         const startOrSendMessage = async () => {
              if (isLoading.value || userInput.value.trim() === '') return;
@@ -226,6 +367,11 @@ const App = {
             history.value.push(userMessage);
             scrollToBottom(); 
 
+            // 如果启用了网络搜索，先执行搜索
+            if (useWebSearch.value) {
+                await performWebSearch();
+            }
+
             try {
                 // Prepare messages for API (include system messages if any were ingested via API)
                 // Note: The current API server resets on each call, so history building here is
@@ -238,9 +384,14 @@ const App = {
                 let retries = 3;
                 let response = null;
                 
+                // 决定使用哪个API端点
+                const apiEndpoint = useCoT.value ? 
+                    `${apiUrl.value}/v1/chat/completions/cot` : 
+                    `${apiUrl.value}/v1/chat/completions`;
+                
                 while (retries > 0) {
                     try {
-                        response = await fetch(`${apiUrl.value}/v1/chat/completions`, {
+                        response = await fetch(apiEndpoint, {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json',
@@ -377,7 +528,19 @@ const App = {
             resetChat,
             checkApiStatus,
             renderMarkdown,
-            useSuggestion // Expose suggestion handler
+            useSuggestion, // Expose suggestion handler
+            useCoT,
+            useWebSearch,
+            isSearching,
+            searchResults,
+            sidebarOpen,
+            activeTab,
+            toggleCoT,
+            toggleWebSearch,
+            performWebSearch,
+            toggleSidebar,
+            setActiveTab,
+            searchOnlyWeb
         };
     }
 };

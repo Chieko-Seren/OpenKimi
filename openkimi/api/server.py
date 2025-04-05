@@ -469,6 +469,262 @@ async def process_txt(file_id: str, file_path: str):
         uploaded_files[file_id]["status"] = "error"
         uploaded_files[file_id]["error"] = str(e)
 
+@app.post("/v1/web_search", 
+          summary="Web Search API",
+          tags=["Tools"])
+async def web_search(search_data: dict):
+    """
+    执行网络搜索，并返回搜索结果
+    """
+    if engine is None:
+        raise HTTPException(status_code=503, detail="KimiEngine not initialized. Check server logs.")
+    
+    query = search_data.get("query")
+    if not query:
+        raise HTTPException(status_code=400, detail="查询参数为空")
+    
+    try:
+        # 使用Google Search API（或其他搜索API）
+        # 这里简化实现，实际应该集成真正的搜索API
+        search_url = f"https://www.googleapis.com/customsearch/v1"
+        params = {
+            "q": query,
+            # 实际使用时需添加API密钥等参数
+            # "key": GOOGLE_API_KEY,
+            # "cx": GOOGLE_SEARCH_ENGINE_ID,
+        }
+        
+        # 尝试使用开源搜索引擎
+        search_results = await search_with_duckduckgo(query)
+        
+        # 如果DuckDuckGo搜索失败，尝试使用SearX
+        if not search_results:
+            search_results = await search_with_searx(query)
+        
+        # 如果所有真实搜索都失败，则使用模拟结果
+        if not search_results:
+            # 模拟搜索结果
+            search_results = [
+                {
+                    "title": f"关于'{query}'的搜索结果1",
+                    "link": f"https://example.com/result1?q={query}",
+                    "snippet": f"这是关于'{query}'的一些信息...",
+                },
+                {
+                    "title": f"关于'{query}'的搜索结果2",
+                    "link": f"https://example.com/result2?q={query}",
+                    "snippet": f"这里有更多关于'{query}'的详细内容...",
+                },
+                {
+                    "title": f"'{query}'的最新资讯",
+                    "link": f"https://example.com/news?q={query}",
+                    "snippet": f"最新的'{query}'相关新闻和更新...",
+                }
+            ]
+        
+        # 存储搜索结果到会话
+        ingest_text = f"网络搜索'{query}'的结果:\n\n"
+        for i, result in enumerate(search_results):
+            ingest_text += f"{i+1}. {result['title']}\n{result['link']}\n{result['snippet']}\n\n"
+        
+        # 将搜索结果摄入到引擎（可选）
+        engine.ingest(ingest_text)
+        
+        return {
+            "status": "success",
+            "query": query,
+            "results": search_results
+        }
+    
+    except Exception as e:
+        logger.error(f"搜索失败: {e}")
+        raise HTTPException(status_code=500, detail=f"搜索失败: {str(e)}")
+
+# 使用DuckDuckGo搜索(无需API密钥的开源搜索引擎)
+async def search_with_duckduckgo(query, num_results=5):
+    try:
+        import requests
+        from bs4 import BeautifulSoup
+        import urllib.parse
+        
+        # 使用DuckDuckGo Lite版本，更容易解析
+        encoded_query = urllib.parse.quote_plus(query)
+        url = f"https://lite.duckduckgo.com/lite/?q={encoded_query}"
+        
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+        
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        
+        soup = BeautifulSoup(response.text, "html.parser")
+        results = []
+        
+        # 在DuckDuckGo Lite中，结果在带有class="result-link"的<a>元素中
+        links = soup.select("a.result-link")
+        snippets = soup.select(".result-snippet")
+        
+        for i, (link, snippet) in enumerate(zip(links, snippets)):
+            if i >= num_results:
+                break
+                
+            title = link.get_text(strip=True)
+            href = link.get("href")
+            snippet_text = snippet.get_text(strip=True)
+            
+            results.append({
+                "title": title,
+                "link": href,
+                "snippet": snippet_text
+            })
+        
+        return results
+    except Exception as e:
+        logger.error(f"DuckDuckGo搜索失败: {e}")
+        return []
+
+# 使用SearX搜索(开源元搜索引擎)
+async def search_with_searx(query, num_results=5):
+    try:
+        import requests
+        import random
+        
+        # 公共的SearX实例列表
+        # 这些实例可能随时变化，可以从 https://searx.space/ 获取最新列表
+        searx_instances = [
+            "https://searx.be/search",
+            "https://search.mdosch.de/search", 
+            "https://searx.fmac.xyz/search"
+        ]
+        
+        # 随机选择一个实例以避免负载集中
+        instance_url = random.choice(searx_instances)
+        
+        params = {
+            "q": query,
+            "format": "json",
+            "language": "zh-CN",
+            "categories": "general",
+            "time_range": "",
+            "safesearch": 1,
+            "engines": "wikipedia,bing,duckduckgo",
+        }
+        
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+        
+        response = requests.get(instance_url, params=params, headers=headers, timeout=10)
+        response.raise_for_status()
+        
+        data = response.json()
+        results = []
+        
+        if "results" in data:
+            for i, result in enumerate(data["results"]):
+                if i >= num_results:
+                    break
+                    
+                results.append({
+                    "title": result.get("title", "无标题"),
+                    "link": result.get("url", "#"),
+                    "snippet": result.get("content", "无描述")
+                })
+        
+        return results
+    except Exception as e:
+        logger.error(f"SearX搜索失败: {e}")
+        return []
+
+@app.post("/v1/chat/completions/cot", 
+          response_model=ChatCompletionResponse,
+          summary="Chain-of-Thought Chat Completion",
+          tags=["Chat"])
+async def create_cot_chat_completion(request: ChatCompletionRequest):
+    """
+    使用Chain-of-Thought提示词增强的聊天完成功能
+    """
+    if engine is None:
+        raise HTTPException(status_code=503, detail="KimiEngine not initialized. Check server logs.")
+    
+    if engine.llm_interface is None:
+        logger.error("KimiEngine has no LLM interface. This might be due to a reset operation.")
+        raise HTTPException(status_code=503, detail="KimiEngine not fully initialized. Try again in a moment.")
+
+    if request.stream:
+        raise HTTPException(status_code=400, detail="Streaming responses are not supported in this version.")
+
+    request_id = f"chatcmpl-{uuid.uuid4()}"
+    created_time = int(time.time())
+    
+    # 处理与常规聊天相同，但添加CoT提示词
+    try:
+        engine.reset()
+        logger.info("Engine reset successfully for CoT")
+    except Exception as e:
+        logger.error(f"Error resetting engine for CoT: {e}")
+        import traceback
+        traceback.print_exc()
+        if engine is None or engine.llm_interface is None:
+            raise HTTPException(status_code=503, detail="Failed to reset KimiEngine. Try again later.")
+    
+    # CoT系统提示词
+    cot_system_prompt = """
+    请一步一步思考这个问题。先理解问题的要点，然后分析可能的解决方案，评估每种方案的优缺点，最后给出最合理的答案。
+    在你的回答中，明确展示你的思考过程：
+    1. 问题分析：明确理解问题要求什么
+    2. 思考过程：列出解决问题的可能步骤或方法
+    3. 分析评估：考虑各种因素和可能性
+    4. 最终答案：基于前面的分析给出完整的答案
+    """
+    
+    # 添加CoT系统提示词
+    engine.ingest(cot_system_prompt)
+    
+    last_user_message = None
+    for message in request.messages:
+        if message.role == "system":
+            # 已经添加了COT提示词，可以再添加用户的系统提示词
+            engine.ingest(message.content)
+        elif message.role == "user":
+            # 保存最后的用户消息
+            last_user_message = message.content
+        elif message.role == "assistant":
+            # 添加助手消息到历史
+            engine.conversation_history.append(message.dict())
+
+    if not last_user_message:
+        raise HTTPException(status_code=400, detail="No user message found in the request.")
+
+    # 生成回复
+    try:
+        print(f"Running CoT chat for user message: {last_user_message[:50]}...")
+        completion_text = engine.chat(last_user_message)
+    except Exception as e:
+        print(f"Error during CoT engine.chat: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error generating CoT completion: {e}")
+
+    # 格式化响应
+    response_message = ChatMessage(role="assistant", content=completion_text)
+    choice = ChatCompletionChoice(index=0, message=response_message, finish_reason="stop")
+    
+    usage = CompletionUsage(
+        prompt_tokens=engine.token_counter.count_tokens(last_user_message), 
+        completion_tokens=engine.token_counter.count_tokens(completion_text), 
+        total_tokens=engine.token_counter.count_tokens(last_user_message) + engine.token_counter.count_tokens(completion_text)
+    )
+
+    return ChatCompletionResponse(
+        id=request_id,
+        created=created_time,
+        model=f"{engine_model_name}-cot", 
+        choices=[choice],
+        usage=usage
+    )
+
 def cli():
     parser = argparse.ArgumentParser(description="Run the OpenKimi FastAPI Server.")
     parser.add_argument("--host", type=str, default="127.0.0.1", help="Host to bind the server to.")

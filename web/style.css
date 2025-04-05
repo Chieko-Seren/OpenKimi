@@ -1,38 +1,179 @@
 /* Add any custom styles here if needed */
 
-/* Set the main background color */
+/* General styles */
 body {
-    background-color: #f7f7f9; /* Light purplish-gray from Kimi */
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background-color: #f8fafc;
 }
 
-/* Kimi Logo Gradient */
-.kimi-logo-gradient {
-    background: linear-gradient(to right, #6366f1, #8b5cf6); /* Indigo to Purple */
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-    font-weight: bold;
-    font-size: 4rem; /* Adjust size as needed */
-}
-
-/* Sidebar Icon Styling (basic) */
+/* Sidebar icon styles */
 .sidebar-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 40px;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: background-color 0.2s;
+    @apply w-10 h-10 flex items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700 cursor-pointer transition-all duration-200;
+    position: relative;
+    overflow: hidden;
 }
 
-.sidebar-icon:hover {
-    background-color: #e5e7eb; /* gray-200 */
+.sidebar-icon::before {
+    content: attr(data-tooltip);
+    position: absolute;
+    left: 100%;
+    top: 50%;
+    transform: translateY(-50%);
+    background-color: #1e293b;
+    color: white;
+    padding: 5px 10px;
+    border-radius: 6px;
+    white-space: nowrap;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s ease, visibility 0.3s ease, transform 0.3s ease;
+    transform-origin: left center;
+    transform: translateY(-50%) translateX(5px) scale(0.95);
+    z-index: 1000;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    font-size: 14px;
+    pointer-events: none;
+}
+
+.sidebar-icon::after {
+    content: '';
+    position: absolute;
+    left: 100%;
+    top: 50%;
+    transform: translateY(-50%);
+    border-width: 6px;
+    border-style: solid;
+    border-color: transparent #1e293b transparent transparent;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s ease, visibility 0.3s ease, transform 0.3s ease;
+    transform-origin: left center;
+    transform: translateY(-50%) translateX(5px);
+    pointer-events: none;
+}
+
+.sidebar-icon:hover::before, 
+.sidebar-icon:hover::after {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(-50%) translateX(10px) scale(1);
+}
+
+.sidebar-icon:active::after {
+    transform: scale(2);
+    opacity: 1;
+    transition: 0s;
 }
 
 .sidebar-icon.active {
-    background-color: #d1d5db; /* gray-300 */
+    @apply bg-gray-100 text-gray-700;
+    animation: pulse-active 2s infinite;
+}
+
+@keyframes pulse-active {
+    0% {
+        box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4);
+    }
+    70% {
+        box-shadow: 0 0 0 6px rgba(59, 130, 246, 0);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
+    }
+}
+
+/* Logo gradient */
+.kimi-logo-gradient {
+    font-size: 8rem;
+    font-weight: 900;
+    letter-spacing: -0.05em;
+    background: linear-gradient(135deg, #3b82f6, #8b5cf6, #ec4899);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    text-fill-color: transparent;
+}
+
+/* Toggle Switch Animations */
+input[type="checkbox"].sr-only + label span {
+    transition: transform 0.2s ease-in-out, background-color 0.2s ease-in-out;
+}
+
+/* Search Results Styles */
+.search-result {
+    @apply p-3 border rounded-lg mb-2 hover:border-blue-300 transition-colors;
+}
+
+.search-result .title {
+    @apply font-semibold text-blue-600 text-base;
+}
+
+.search-result .link {
+    @apply text-xs text-gray-500 mb-1 break-all;
+}
+
+.search-result .snippet {
+    @apply text-sm text-gray-700 leading-relaxed;
+}
+
+/* File Upload Preview */
+.file-preview {
+    @apply border border-gray-300 rounded p-2 flex items-center my-2;
+}
+
+.file-preview .file-name {
+    @apply ml-2 text-sm font-medium overflow-hidden overflow-ellipsis whitespace-nowrap flex-grow;
+}
+
+.file-preview .file-status {
+    @apply text-xs text-gray-500 ml-auto;
+}
+
+/* Responsive sidebar behavior */
+@media (max-width: 768px) {
+    .sidebar-expanded {
+        display: none; /* Hide expanded sidebar on mobile */
+    }
+}
+
+/* Prose styles for markdown content */
+.prose pre {
+    @apply rounded bg-gray-800 text-white p-3 overflow-x-auto my-2;
+}
+
+.prose code {
+    @apply font-mono text-sm;
+}
+
+.prose p {
+    @apply my-2;
+}
+
+.prose h1, .prose h2, .prose h3 {
+    @apply font-bold my-3;
+}
+
+.prose ul, .prose ol {
+    @apply pl-5 my-2;
+}
+
+.prose a {
+    @apply text-blue-600 hover:underline;
+}
+
+/* Make sure search indicator is visible */
+.searching-indicator {
+    @apply flex items-center justify-center p-4 text-gray-500;
+}
+
+/* Animation for the cot thinking indicator */
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.animate-pulse {
+    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
 /* Ensure chat history scrolls */
@@ -67,4 +208,150 @@ body {
 .prose p {
     margin-top: 0.5em;
     margin-bottom: 0.5em;
+}
+
+/* 网络搜索结果样式 */
+.search-results {
+    margin-top: 10px;
+    margin-bottom: 20px;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+/* 单个搜索结果 */
+.search-result-item {
+    background-color: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 12px;
+    transition: all 0.2s;
+}
+
+.search-result-item:hover {
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    transform: translateY(-2px);
+}
+
+/* 搜索结果标题 */
+.search-result-title {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.search-result-title a {
+    color: #2563eb;
+    text-decoration: none;
+}
+
+.search-result-title a:hover {
+    text-decoration: underline;
+}
+
+/* 搜索结果链接 */
+.search-result-link {
+    font-size: 12px;
+    color: #64748b;
+    word-break: break-all;
+    margin-bottom: 6px;
+}
+
+/* 搜索结果摘要 */
+.search-result-snippet {
+    font-size: 14px;
+    color: #334155;
+    line-height: 1.5;
+}
+
+/* 搜索消息样式 */
+.search-message {
+    padding: 10px;
+    margin-bottom: 10px;
+    font-weight: bold;
+    color: #4a5568;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.search-message.error {
+    color: #e53e3e;
+}
+
+/* 思考动画 */
+@keyframes thinking {
+    0% {
+        opacity: 0;
+    }
+    50% {
+        opacity: 1;
+    }
+    100% {
+        opacity: 0;
+    }
+}
+
+.thinking-dots {
+    display: inline-flex;
+}
+
+.thinking-dots span {
+    opacity: 0;
+    animation: thinking 1.4s infinite;
+}
+
+.thinking-dots span:nth-child(1) {
+    animation-delay: 0s;
+}
+
+.thinking-dots span:nth-child(2) {
+    animation-delay: 0.2s;
+}
+
+.thinking-dots span:nth-child(3) {
+    animation-delay: 0.4s;
+}
+
+/* 侧边栏动画效果 */
+.sidebar-transition {
+    transition: width 0.3s ease-in-out, transform 0.3s ease-in-out;
+}
+
+/* 侧边栏展开/收起动画 */
+.sidebar-panel {
+    transform: translateX(-100%);
+    transition: transform 0.3s ease-in-out;
+}
+
+.sidebar-panel.active {
+    transform: translateX(0);
+}
+
+/* 侧边栏内容淡入淡出效果 */
+.sidebar-content {
+    opacity: 0;
+    transform: translateY(10px);
+    transition: opacity 0.3s ease-out, transform 0.3s ease-out;
+}
+
+.sidebar-content.visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+/* 点击波纹效果 */
+.sidebar-icon .ripple {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.3) 0%, rgba(59, 130, 246, 0) 70%);
+  transform: scale(0);
+  opacity: 0;
+  transition: transform 0.4s ease-out, opacity 0.3s ease-out;
+  pointer-events: none;
+}
+
+.sidebar-icon:active .ripple {
+  transform: scale(2);
+  opacity: 1;
+  transition: 0s;
 } 

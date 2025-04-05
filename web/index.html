@@ -18,7 +18,7 @@
     <div id="app" class="flex w-full h-full">
 
         <!-- Sidebar -->
-        <aside class="w-16 flex flex-col items-center bg-white py-4 space-y-4 border-r border-gray-200">
+        <aside class="w-16 flex flex-col items-center bg-white py-4 space-y-4 border-r border-gray-200 sidebar-transition" id="mainSidebar">
             <!-- Top Logo/Icon -->
             <div class="p-2 bg-black text-white rounded-lg mb-4">
                  <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -26,33 +26,104 @@
                  </svg>
             </div>
             <!-- Icons -->
-            <div class="sidebar-icon active">
+            <div class="sidebar-icon" :class="{'active': activeTab === 'chat'}" @click="setActiveTab('chat')" data-tooltip="聊天">
                 <ion-icon name="chatbubbles-outline" class="text-2xl"></ion-icon>
+                <span class="ripple"></span>
             </div>
-            <div class="sidebar-icon">
+            <div class="sidebar-icon" :class="{'active': activeTab === 'files'}" @click="setActiveTab('files')" data-tooltip="文件">
                  <ion-icon name="folder-outline" class="text-2xl"></ion-icon>
+                 <span class="ripple"></span>
             </div>
-            <div class="sidebar-icon">
+            <div class="sidebar-icon" :class="{'active': activeTab === 'settings'}" @click="setActiveTab('settings')" data-tooltip="设置">
                 <ion-icon name="settings-outline" class="text-2xl"></ion-icon>
+                <span class="ripple"></span>
             </div>
-            <div class="sidebar-icon">
+            <div class="sidebar-icon" :class="{'active': activeTab === 'plugins'}" @click="setActiveTab('plugins')" data-tooltip="插件">
                 <ion-icon name="extension-puzzle-outline" class="text-2xl"></ion-icon>
+                <span class="ripple"></span>
             </div>
             
             <!-- Spacer -->
             <div class="flex-grow"></div>
 
             <!-- Bottom Icons -->
-             <div class="sidebar-icon">
-                <ion-icon name="log-in-outline" class="text-2xl"></ion-icon> <!-- Login Placeholder -->
+             <div class="sidebar-icon" data-tooltip="登录">
+                <ion-icon name="log-in-outline" class="text-2xl"></ion-icon>
+                <span class="ripple"></span>
             </div>
-             <div class="sidebar-icon">
-                <ion-icon name="tv-outline" class="text-2xl"></ion-icon> <!-- Some other icon -->
+             <div class="sidebar-icon" data-tooltip="演示">
+                <ion-icon name="tv-outline" class="text-2xl"></ion-icon>
+                <span class="ripple"></span>
             </div>
-             <div class="sidebar-icon">
-                <ion-icon name="phone-portrait-outline" class="text-2xl"></ion-icon> <!-- Another icon -->
+             <div class="sidebar-icon" data-tooltip="移动端">
+                <ion-icon name="phone-portrait-outline" class="text-2xl"></ion-icon>
+                <span class="ripple"></span>
             </div>
         </aside>
+
+        <!-- Expanded Sidebar Panel -->
+        <div v-if="activeTab !== 'chat'" class="w-64 bg-white border-r border-gray-200 overflow-y-auto sidebar-panel" :class="{'active': activeTab !== 'chat'}" id="sidebarPanel">
+            <!-- Files Panel -->
+            <div v-if="activeTab === 'files'" class="p-4">
+                <h2 class="text-lg font-semibold mb-4">已上传文件</h2>
+                <div v-if="uploadedFiles.length === 0" class="text-sm text-gray-500 mt-2">
+                    尚未上传任何文件
+                </div>
+                <div v-else class="space-y-2">
+                    <div v-for="file in uploadedFiles" :key="file.id" class="p-2 border rounded flex items-center">
+                        <ion-icon name="document-outline" class="text-gray-500 mr-2"></ion-icon>
+                        <div class="text-sm">
+                            <div class="font-medium">{{ file.name }}</div>
+                            <div class="text-xs text-gray-500">{{ file.status }}</div>
+                        </div>
+                    </div>
+                </div>
+                <button @click="triggerFileUpload" class="mt-4 w-full bg-blue-500 text-white py-2 rounded hover:bg-blue-600">
+                    上传新文件
+                </button>
+            </div>
+            
+            <!-- Settings Panel -->
+            <div v-if="activeTab === 'settings'" class="p-4">
+                <h2 class="text-lg font-semibold mb-4">设置</h2>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">API 地址</label>
+                        <input v-model="apiUrl" class="w-full p-2 border rounded focus:ring-blue-500 focus:border-blue-500" placeholder="http://127.0.0.1:8000" />
+                        <button @click="checkApiStatus" class="mt-2 text-sm text-blue-500 hover:underline">测试连接</button>
+                        <div class="text-sm mt-1">状态: {{ apiStatus }}</div>
+                    </div>
+                    
+                    <div class="flex items-center space-x-2">
+                        <label class="text-sm font-medium text-gray-700">长思考模式</label>
+                        <div class="relative inline-block w-10 align-middle select-none">
+                            <input type="checkbox" v-model="useCoT" id="toggle-cot" class="sr-only" />
+                            <label for="toggle-cot" class="block overflow-hidden h-6 rounded-full bg-gray-200 cursor-pointer">
+                                <span :class="useCoT ? 'translate-x-5 bg-blue-500' : 'translate-x-0 bg-white'" class="absolute block w-5 h-5 rounded-full transform transition-transform duration-200 ease-in border-2"></span>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="flex items-center space-x-2">
+                        <label class="text-sm font-medium text-gray-700">联网搜索</label>
+                        <div class="relative inline-block w-10 align-middle select-none">
+                            <input type="checkbox" v-model="useWebSearch" id="toggle-web-search" class="sr-only" />
+                            <label for="toggle-web-search" class="block overflow-hidden h-6 rounded-full bg-gray-200 cursor-pointer">
+                                <span :class="useWebSearch ? 'translate-x-5 bg-blue-500' : 'translate-x-0 bg-white'" class="absolute block w-5 h-5 rounded-full transform transition-transform duration-200 ease-in border-2"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Plugins Panel -->
+            <div v-if="activeTab === 'plugins'" class="p-4">
+                <h2 class="text-lg font-semibold mb-4">插件</h2>
+                <div class="text-sm text-gray-500">
+                    敬请期待插件功能...
+                </div>
+            </div>
+        </div>
 
         <!-- Main Content -->
         <main class="flex-grow flex flex-col overflow-hidden">
@@ -66,43 +137,30 @@
 
                  <!-- Main Input Box -->
                 <div class="w-full max-w-3xl bg-white rounded-lg shadow-lg p-4 flex flex-col relative">
-                    <textarea 
-                        v-model="userInput"
-                        @keydown.enter.prevent="startOrSendMessage"
-                        placeholder="尽管问..."
-                        class="w-full p-2 mb-2 border-none focus:outline-none focus:ring-0 resize-none text-base"
-                        rows="3"
-                    ></textarea>
-                    <div class="flex items-center justify-between text-sm text-gray-500">
-                        <div class="flex items-center space-x-2">
-                            <button class="flex items-center px-2 py-1 border rounded hover:bg-gray-100">
-                                <ion-icon name="bulb-outline" class="mr-1"></ion-icon>
-                                k1.5 长思考
-                            </button>
-                             <button class="flex items-center px-2 py-1 border rounded hover:bg-gray-100">
-                                <ion-icon name="globe-outline" class="mr-1"></ion-icon>
-                                联网搜索
-                            </button>
+                    <div class="flex items-end space-x-2">
+                        <div class="relative flex-1">
+                            <input v-model="userInput" type="text" placeholder="输入您的问题..." 
+                              class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              @keyup.enter="startOrSendMessage">
+                            <div class="absolute right-3 bottom-3 flex space-x-2">
+                                <button @click="triggerFileUpload" class="text-gray-500 hover:text-gray-700">
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M18.375 12.739l-7.693 7.693a4.5 4.5 0 01-6.364-6.364l10.94-10.94A3 3 0 1119.5 7.372L8.552 18.32m.009-.01l-.01.01m5.699-9.941l-7.81 7.81a1.5 1.5 0 002.112 2.13" />
+                                    </svg>
+                                </button>
+                                <!-- 添加立即搜索按钮 -->
+                                <button @click="searchOnlyWeb" class="text-gray-500 hover:text-gray-700" title="网络搜索">
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+                                    </svg>
+                                </button>
+                            </div>
                         </div>
-                        <div class="flex items-center space-x-2">
-                            <button class="p-1 rounded hover:bg-gray-100">
-                                <ion-icon name="cube-outline" class="text-xl"></ion-icon>
-                            </button>
-                             <button @click="triggerFileUpload" class="p-1 rounded hover:bg-gray-100" :class="{'text-blue-500': uploadedFiles.length > 0}">
-                                <ion-icon name="attach-outline" class="text-xl"></ion-icon>
-                                <input 
-                                    type="file" 
-                                    ref="fileInput" 
-                                    @change="handleFileUpload" 
-                                    accept=".pdf,.docx,.txt,.doc" 
-                                    multiple
-                                    class="hidden" 
-                                />
-                            </button>
-                            <button @click="startOrSendMessage" :disabled="isLoading || userInput.trim() === ''" class="p-1 rounded hover:bg-gray-100 disabled:opacity-50">
-                                <ion-icon name="send-outline" class="text-xl"></ion-icon>
-                            </button>
-                        </div>
+                        <button @click="startOrSendMessage" class="px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+                            </svg>
+                        </button>
                     </div>
                 </div>
 
@@ -172,6 +230,18 @@
                             </div>
                         </div>
                     </div>
+                    <!-- Web search indicator -->
+                    <div v-if="isSearching" class="flex justify-start">
+                        <div class="p-3 rounded-lg max-w-xl bg-white text-gray-800 shadow">
+                            <div class="flex items-center justify-center">
+                                <svg class="animate-spin h-5 w-5 text-gray-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                <span class="ml-2 text-sm text-gray-500">正在搜索网络资源...</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Input Area (Similar to initial view's input box) -->
@@ -187,27 +257,54 @@
                             </div>
                         </div>
                     </div>
-                    <textarea 
-                        v-model="userInput"
-                        @keydown.enter.prevent="startOrSendMessage"
-                        placeholder="继续提问..."
-                        class="w-full p-2 mb-2 border-none focus:outline-none focus:ring-0 resize-none text-base"
-                        rows="3"
-                    ></textarea>
-                    <div class="flex items-center justify-between text-sm text-gray-500">
-                        <div class="flex items-center space-x-2">
-                            <!-- Simplified buttons for chat view -->
-                            <button @click="resetChat" :disabled="isLoading" class="flex items-center px-2 py-1 border rounded hover:bg-gray-100 disabled:opacity-50">
-                                <ion-icon name="refresh-outline" class="mr-1"></ion-icon>
+                    <div class="flex flex-col w-full">
+                        <!-- 聊天配置按钮 -->
+                        <div class="flex items-center mb-2 text-sm text-gray-500">
+                            <button @click="resetChat" :disabled="isLoading" class="flex items-center px-2 py-1 mr-2 border rounded hover:bg-gray-100 disabled:opacity-50">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg>
                                 新对话
                             </button>
-                        </div>
-                        <div class="flex items-center space-x-2">
-                            <button class="p-1 rounded hover:bg-gray-100">
-                                <ion-icon name="cube-outline" class="text-xl"></ion-icon>
+                            <button @click="toggleCoT" class="flex items-center px-2 py-1 mr-2 border rounded hover:bg-gray-100" :class="{'bg-blue-50 border-blue-300 text-blue-700': useCoT}">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                                </svg>
+                                长思考
                             </button>
-                             <button @click="triggerFileUpload" class="p-1 rounded hover:bg-gray-100" :class="{'text-blue-500': uploadedFiles.length > 0}">
-                                <ion-icon name="attach-outline" class="text-xl"></ion-icon>
+                            <button @click="toggleWebSearch" class="flex items-center px-2 py-1 mr-2 border rounded hover:bg-gray-100" :class="{'bg-blue-50 border-blue-300 text-blue-700': useWebSearch}">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
+                                </svg>
+                                联网搜索
+                            </button>
+                            <button @click="toggleSidebar" class="flex items-center px-2 py-1 border rounded hover:bg-gray-100 ml-auto">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+                                </svg>
+                            </button>
+                        </div>
+                        
+                        <!-- 输入区域 -->
+                        <div class="flex items-end space-x-2">
+                            <div class="relative flex-1">
+                                <input v-model="userInput" type="text" placeholder="输入您的问题..." 
+                                  class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                  @keyup.enter="startOrSendMessage">
+                                <div class="absolute right-3 bottom-3 flex space-x-2">
+                                    <button @click="triggerFileUpload" class="text-gray-500 hover:text-gray-700" title="上传文件">
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M18.375 12.739l-7.693 7.693a4.5 4.5 0 01-6.364-6.364l10.94-10.94A3 3 0 1119.5 7.372L8.552 18.32m.009-.01l-.01.01m5.699-9.941l-7.81 7.81a1.5 1.5 0 002.112 2.13" />
+                                        </svg>
+                                    </button>
+                                    <!-- 添加立即搜索按钮 -->
+                                    <button @click="searchOnlyWeb" class="text-gray-500 hover:text-gray-700" title="网络搜索">
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+                                        </svg>
+                                    </button>
+                                </div>
+                                <!-- 隐藏的文件输入 -->
                                 <input 
                                     type="file" 
                                     ref="fileInput" 
@@ -216,9 +313,11 @@
                                     multiple
                                     class="hidden" 
                                 />
-                            </button>
-                            <button @click="startOrSendMessage" :disabled="isLoading || userInput.trim() === ''" class="p-1 rounded hover:bg-gray-100 disabled:opacity-50">
-                                <ion-icon name="send-outline" class="text-xl"></ion-icon>
+                            </div>
+                            <button @click="startOrSendMessage" class="px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+                                </svg>
                             </button>
                         </div>
                     </div>
