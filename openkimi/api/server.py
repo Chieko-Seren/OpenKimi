@@ -58,7 +58,35 @@ def initialize_engine(args):
         with open(args.config, 'r') as f:
             config_content = f.read()
             print(f"配置文件内容: {config_content}")
+        
+        # 尝试验证JSON格式    
+        try:
+            json_config = json.loads(config_content)
+            print(f"JSON解析成功: {json_config}")
+        except json.JSONDecodeError as e:
+            print(f"JSON解析失败: {e}")
             
+        # 检查transformers库是否正确安装 (DummyLLM需要)
+        try:
+            import transformers
+            print(f"Transformers库版本: {transformers.__version__}")
+        except ImportError:
+            print("错误: Transformers库未安装或无法导入")
+            print("请运行: pip install transformers")
+            engine = None
+            return
+            
+        # 检查sentence-transformers库是否正确安装 (RAG需要)
+        try:
+            import sentence_transformers
+            print(f"Sentence-Transformers库版本: {sentence_transformers.__version__}")
+        except ImportError:
+            print("错误: sentence-transformers库未安装或无法导入")
+            print("请运行: pip install sentence-transformers")
+            engine = None
+            return
+                
+        print("开始初始化KimiEngine实例...")
         engine = KimiEngine(
             config_path=args.config,
             # You might want to load LLM/processor/RAG configs directly here too
@@ -77,9 +105,15 @@ def initialize_engine(args):
             print("WARNING: engine.llm_interface is None after initialization!")
             # 尝试重新初始化llm_interface
             print(f"尝试重新初始化LLM接口，配置: {engine.config['llm']}")
-            engine.llm_interface = get_llm_interface(engine.config["llm"])
-            if engine.llm_interface is None:
-                print("CRITICAL: Failed to recreate llm_interface!")
+            try:
+                engine.llm_interface = get_llm_interface(engine.config["llm"])
+                if engine.llm_interface is None:
+                    print("CRITICAL: Failed to recreate llm_interface!")
+                    engine = None
+            except Exception as llm_error:
+                print(f"重新初始化LLM接口失败: {llm_error}")
+                import traceback
+                traceback.print_exc()
                 engine = None
                 
     except Exception as e:

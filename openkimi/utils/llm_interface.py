@@ -40,14 +40,31 @@ class DummyLLM(LLMInterface):
     """测试用的简单LLM实现"""
     def __init__(self):
         # Use a simple tokenizer for dummy length calculation
-        from transformers import AutoTokenizer
-        # Use a common open-source model tokenizer like Llama's for approximation
+        print("初始化DummyLLM...")
         try:
-            self.tokenizer = AutoTokenizer.from_pretrained("hf-internal-testing/llama-tokenizer") 
-        except OSError:
-            print("Warning: Could not load dummy tokenizer hf-internal-testing/llama-tokenizer. Falling back to gpt2.")
-            self.tokenizer = AutoTokenizer.from_pretrained("gpt2")
+            from transformers import AutoTokenizer
+            # Use a common open-source model tokenizer like Llama's for approximation
+            try:
+                print("尝试加载hf-internal-testing/llama-tokenizer")
+                self.tokenizer = AutoTokenizer.from_pretrained("hf-internal-testing/llama-tokenizer") 
+                print("成功加载llama-tokenizer")
+            except Exception as e:
+                print(f"警告: 无法加载llama-tokenizer: {e}")
+                print("尝试加载gpt2 tokenizer")
+                try:
+                    self.tokenizer = AutoTokenizer.from_pretrained("gpt2")
+                    print("成功加载gpt2 tokenizer")
+                except Exception as e2:
+                    print(f"警告: 无法加载gpt2 tokenizer: {e2}")
+                    print("使用内置简单分词器")
+                    # 创建一个简单的分词器
+                    self.tokenizer = SimpleTokenizer()
+        except ImportError:
+            print("警告: 无法导入transformers库，使用内置简单分词器")
+            self.tokenizer = SimpleTokenizer()
+            
         self.max_context = 2048 # Assume a common context length
+        print("DummyLLM初始化完成")
         
     def generate(self, prompt: str, max_new_tokens: int = 50, temperature: float = 0.7, **kwargs) -> str:
         """
@@ -67,6 +84,20 @@ class DummyLLM(LLMInterface):
         
     def get_max_context_length(self) -> int:
         return self.max_context
+        
+# 简单的内置分词器，用于fallback
+class SimpleTokenizer:
+    """极简的分词器，用于在无法加载transformers时使用"""
+    def encode(self, text, max_length=None, truncation=False, **kwargs):
+        # 简单地按字符分割
+        tokens = list(text)
+        if max_length and truncation and len(tokens) > max_length:
+            tokens = tokens[:max_length]
+        return tokens
+    
+    def decode(self, tokens):
+        # 简单地拼接字符
+        return ''.join(tokens)
 
 class LocalLLM(LLMInterface):
     """本地LLM模型接口 (使用 Transformers)"""
