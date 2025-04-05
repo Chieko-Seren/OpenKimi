@@ -1,0 +1,35 @@
+/* Add any custom styles here if needed */
+
+/* Ensure chat history scrolls */
+.chat-history {
+    /* You might need to adjust the max-height based on your layout */
+    /* max-height: calc(100vh - 200px); */ 
+}
+
+/* Style for rendered Markdown */
+.prose pre {
+    background-color: #f3f4f6; /* bg-gray-100 */
+    padding: 0.5rem;
+    border-radius: 0.25rem;
+    overflow-x: auto;
+}
+.prose code {
+    font-family: monospace;
+}
+.prose code:not(pre code) {
+    background-color: #e5e7eb; /* bg-gray-200 */
+    padding: 0.1rem 0.25rem;
+    border-radius: 0.25rem;
+}
+.prose ul,
+.prose ol {
+    padding-left: 1.5rem;
+}
+.prose li > * {
+    margin-top: 0.25em;
+    margin-bottom: 0.25em;
+}
+.prose p {
+    margin-top: 0.5em;
+    margin-bottom: 0.5em;
+} 

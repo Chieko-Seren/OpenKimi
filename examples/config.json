@@ -2,16 +2,20 @@
     "llm": {
         "type": "dummy",
         "model_path": null,
+        "model_name": "gpt-3.5-turbo",
         "api_key": null,
-        "api_url": null
+        "api_url": null,
+        "context_length": 4096
     },
     "processor": {
         "batch_size": 512,
         "entropy_threshold": 3.0
     },
     "rag": {
-        "summary_max_length": 100
+        "embedding_model": "all-MiniLM-L6-v2",
+        "top_k": 3
     },
+    "mcp_candidates": 1,
     "framework": {
         "max_steps": 5
     }

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenKimi Web UI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script> <!-- Markdown Renderer -->
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" href="https://i.postimg.cc/6qdQbvPf/open-kimi.png" type="image/png">
+</head>
+<body class="bg-gray-100 flex flex-col h-screen">
+
+    <div id="app" class="flex flex-col flex-grow max-w-4xl mx-auto w-full p-4">
+
+        <!-- Header -->
+        <header class="mb-4 flex items-center justify-between">
+            <div class="flex items-center space-x-2">
+                <img src="https://i.postimg.cc/6qdQbvPf/open-kimi.png" alt="OpenKimi Logo" class="h-10 w-10">
+                <h1 class="text-2xl font-bold text-gray-800">OpenKimi 对话</h1>
+            </div>
+            <div class="text-sm text-gray-500">
+                API: {{ apiStatus }}
+            </div>
+        </header>
+
+        <!-- Chat History -->
+        <div class="chat-history flex-grow overflow-y-auto mb-4 p-4 bg-white rounded-lg shadow space-y-4" ref="chatHistory">
+            <div v-for="message in history" :key="message.id" :class="['flex', message.role === 'user' ? 'justify-end' : 'justify-start']">
+                <div :class="['p-3 rounded-lg max-w-lg', message.role === 'user' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-800']">
+                    <strong class="capitalize">{{ message.role }}:</strong>
+                    <div v.html="renderMarkdown(message.content)" class="prose prose-sm max-w-none"></div>
+                    <div v-if="message.loading" class="flex items-center justify-center mt-2">
+                        <svg class="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                    </div>
+                </div>
+            </div>
+             <!-- Loading Indicator -->
+             <div v-if="isLoading" class="flex justify-start">
+                <div class="p-3 rounded-lg max-w-lg bg-gray-200 text-gray-800">
+                    <strong class="capitalize">assistant:</strong>
+                    <div class="flex items-center justify-center mt-2">
+                        <svg class="animate-spin h-5 w-5 text-gray-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                          <span class="ml-2 text-sm">思考中...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Input Area -->
+        <div class="input-area flex space-x-2">
+            <textarea 
+                v-model="userInput" 
+                @keydown.enter.prevent="sendMessage" 
+                placeholder="输入你的问题... (Ctrl+Enter 换行)" 
+                class="flex-grow p-2 border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                rows="2"
+            ></textarea>
+            <button 
+                @click="sendMessage" 
+                :disabled="isLoading || userInput.trim() === ''" 
+                class="px-4 py-2 bg-blue-500 text-white rounded-lg shadow hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed">
+                发送
+            </button>
+            <button 
+                @click="resetChat" 
+                :disabled="isLoading" 
+                class="px-4 py-2 bg-red-500 text-white rounded-lg shadow hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed">
+                重置
+            </button>
+        </div>
+        
+        <!-- API URL Input -->
+        <div class="mt-2 text-sm text-gray-600 flex items-center">
+            <label for="api-url" class="mr-2">API URL:</label>
+            <input id="api-url" type="text" v-model="apiUrl" placeholder="http://localhost:8000" class="flex-grow p-1 border rounded text-xs">
+            <button @click="checkApiStatus" class="ml-2 px-2 py-1 bg-gray-300 text-xs rounded hover:bg-gray-400">检查</button>
+        </div>
+
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html> 

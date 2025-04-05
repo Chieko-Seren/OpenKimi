@@ -108,97 +108,157 @@ openkimi/
 
 ## 🧠 核心功能详解
 
+OpenKimi 通过以下核心机制实现无限上下文处理：
+
 ### 文本处理和信息熵计算
-OpenKimi 使用信息熵来评估文本块的信息密度，这使得系统能够智能地识别哪些内容值得保留在主上下文中，哪些可以暂时存储到 RAG 中。
+- **分块**: 将长文本切分为可管理的大小 (`batch_size`)。
+- **信息熵评估**: 使用词频计算每个块的信息熵，评估其信息密度。
+- **分类**: 低于阈值 (`entropy_threshold`) 的块被视为信息密度较低。
 
 ```python
 from openkimi.core import TextProcessor
 
 processor = TextProcessor(batch_size=512)
 batches = processor.split_into_batches(long_text)
-useful, less_useful = processor.classify_by_entropy(batches)
+useful, less_useful = processor.classify_by_entropy(batches, threshold=3.0)
 ```
 
-### RAG 管理
-非关键文本会被摘要并存储到 RAG 系统中，需要时可以动态检索回来：
+### RAG 管理 (向量检索)
+- **存储**: 低信息熵文本块通过 LLM 进行摘要，摘要和原文一同存储。摘要文本被转换为向量（使用 `sentence-transformers`）并索引。
+- **检索**: 当需要额外上下文时，用户查询被转换为向量，通过计算与存储的摘要向量之间的余弦相似度来检索最相关的原文块 (`top_k`)。
 
 ```python
 from openkimi.core import RAGManager
 from openkimi.utils.llm_interface import get_llm_interface
 
 llm = get_llm_interface({"type": "dummy"})
-rag = RAGManager(llm)
+rag = RAGManager(llm, embedding_model_name='all-MiniLM-L6-v2')
 summaries = rag.batch_store(less_useful_texts)
-relevant_texts = rag.retrieve("相关查询")
+relevant_texts = rag.retrieve("相关查询", top_k=3)
 ```
 
-### 框架生成
-将复杂问题分解为步骤，确保解决方案的质量：
+### 递归 RAG 压缩
+- **上下文超限处理**: 在调用 LLM（用于摘要、框架生成、解决方案生成等）之前，如果构造的 Prompt 超过模型的最大上下文长度 (`max_prompt_tokens`)，OpenKimi 会自动触发递归 RAG 压缩。
+- **压缩过程**: 超长的文本会被分块、计算信息熵，低信息熵部分被临时 RAG 存储（生成摘要并向量化），只保留高信息熵部分和低信息熵部分的摘要，形成压缩后的文本。此过程可递归进行，直至文本长度符合要求。
+
+### 框架生成 & MCP
+- **框架生成**: 将复杂问题分解为步骤，确保解决方案的逻辑性。
+- **MCP (Mixture of Context Prompters)**: （可选，通过 `mcp_candidates` 配置）为同一个问题生成多个候选解决方案（可能基于上下文的不同侧重或随机性），然后通过最终的 LLM 调用将这些候选方案综合成一个更全面、更鲁棒的最终答案。
 
 ```python
 from openkimi.core import FrameworkGenerator
 
 framework_gen = FrameworkGenerator(llm)
-solution_framework = framework_gen.generate_framework("复杂问题")
-solution = framework_gen.generate_solution("复杂问题", solution_framework)
+solution_framework = framework_gen.generate_framework("复杂问题", context=relevant_history)
+# 使用 MCP (假设 mcp_candidates > 1)
+final_solution = framework_gen.generate_solution_mcp(
+    "复杂问题", 
+    solution_framework, 
+    useful_context=relevant_history, 
+    rag_context=retrieved_rag_texts, 
+    num_candidates=3
+)
 ```
 
-## 🚀 使用案例
-
-### 1. 处理超长文档
-
-```python
-from openkimi import KimiEngine
-
-engine = KimiEngine()
-with open("book.txt", "r") as f:
-    engine.ingest(f.read())
-
-# 可以处理远超传统LLM上下文窗口的文档
-response = engine.chat("分析这本书的主题和写作风格")
-print(response)
-```
-
-### 2. 统一处理不同LLM
-
-```python
-# 使用本地模型
-engine1 = KimiEngine(llm="./models/my_model")
-
-# 使用API
-import os
-os.environ["LLM_API_KEY"] = "your-api-key"
-engine2 = KimiEngine(config_path="config_api.json")
-```
+### 可插拔 LLM 接口
+- 支持 `dummy` (用于测试), `local` (使用 Hugging Face `transformers` 加载本地模型) 和 `api` (兼容 OpenAI Chat Completion API) 类型。
+- 通过配置文件或初始化参数轻松切换。
 
 ## ⚙️ 配置选项
 
-OpenKimi 支持丰富的配置选项，主要包括：
+通过 JSON 配置文件 (`config.json`) 或 `KimiEngine` 初始化参数进行配置：
 
-1. **LLM 设置**：选择模型类型，设置路径或API密钥
-2. **处理器设置**：调整批次大小和信息熵阈值
-3. **RAG 设置**：控制摘要和检索行为
-4. **框架设置**：定制问题解决框架的生成方式
+- **`llm`**: 
+    - `type`: "dummy", "local", "api"
+    - `model_path`: (local) 模型路径或 HF Hub 名称
+    - `device`: (local) "auto", "cpu", "cuda", "mps"
+    - `api_key`: (api) API 密钥 (或从 `OPENAI_API_KEY` 环境变量读取)
+    - `api_url`: (api) API 端点 (或从 `OPENAI_API_BASE` 环境变量读取)
+    - `model_name`: (api) 使用的模型名称 (e.g., "gpt-4")
+    - `context_length`: (api/local) 模型上下文长度 (Token 数)
+- **`processor`**: 
+    - `batch_size`: 文本分块大小
+    - `entropy_threshold`: 低于此熵值的块进入 RAG
+- **`rag`**: 
+    - `embedding_model`: Sentence Transformer 模型名称 (e.g., "all-MiniLM-L6-v2")
+    - `top_k`: 检索时返回的相关文本块数量
+- **`mcp_candidates`**: MCP 候选方案数量 (1 表示禁用)
 
-示例配置文件:
+示例 (`config.json`):
 ```json
 {
     "llm": {
-        "type": "api",
-        "api_key": "your-api-key",
-        "api_url": "https://api.example.com/v1/completions"
+        "type": "local",
+        "model_path": "gpt2", // Or your local model path
+        "device": "auto",
+        "context_length": 1024
     },
     "processor": {
-        "batch_size": 1024,
-        "entropy_threshold": 2.5
-    }
+        "batch_size": 256,
+        "entropy_threshold": 2.8
+    },
+    "rag": {
+        "embedding_model": "all-MiniLM-L6-v2",
+        "top_k": 5
+    },
+    "mcp_candidates": 3 // Enable MCP with 3 candidates
 }
 ```
 
+## 🌐 OpenAI 兼容 API 服务器
+
+OpenKimi 提供了一个 FastAPI 服务器，用于暴露 OpenAI Chat Completion 兼容的 API 端点。
+
+**启动服务器:**
+
+```bash
+# Make sure dependencies are installed: pip install -r requirements.txt
+
+# Set API Key if using API backend for the engine itself
+# export OPENAI_API_KEY="sk-..."
+
+python -m openkimi.api.server --config examples/config.json --port 8000 --host 0.0.0.0
+```
+
+**可用参数:**
+- `--host`: 监听地址 (默认: 127.0.0.1)
+- `--port`: 监听端口 (默认: 8000)
+- `--config` / `-c`: KimiEngine 配置文件路径
+- `--mcp-candidates`: 覆盖配置中的 MCP 候选数量
+- `--reload`: 开发模式，代码更改时自动重载
+
+**API 端点:**
+- `POST /v1/chat/completions`: 处理聊天请求。
+- `GET /health`: 检查服务器和引擎状态。
+
+**使用示例 (curl):**
+
+```bash
+curl http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "openkimi-model", 
+    "messages": [
+      {"role": "system", "content": "这是需要处理的长文档内容..."},
+      {"role": "user", "content": "请根据文档回答这个问题？"}
+    ]
+  }'
+```
+
+**注意:** 当前 API 实现较为简单，每次请求会重置引擎状态并重新处理 `system` 消息中的文档，效率不高。未来版本会改进状态管理。
+
 ## 🌈 未来计划
 
-- [ ] 添加更多 LLM 后端支持
-- [ ] 实现向量数据库集成，提升 RAG 性能
+- [ ] **优化 API 状态管理**: 支持多轮对话状态保持。
+- [ ] **流式 API 响应**: 实现 `stream=True` 支持。
+- [ ] **更智能的 RAG**: 集成向量数据库 (e.g., ChromaDB, FAISS)，支持更高级检索策略。
+- [ ] **更精确的 Token 计算**: 使用 `tiktoken` 或特定模型的精确 tokenizer。
+- [ ] **完善 MCP 策略**: 探索不同的上下文采样和候选方案合成方法。
+- [ ] **支持量化和 Accelerate**: 优化本地模型加载和推理速度/显存。
+- [ ] **完善递归 RAG 内部调用**: 确保所有 LLM 调用点都检查上下文长度。
+- [ ] **更全面的测试**: 增加单元测试和集成测试覆盖率。
+- [x] 添加更多 LLM 后端支持 (`transformers`, OpenAI API)
+- [x] 实现向量数据库集成，提升 RAG 性能 (Basic Sentence Transformers + Cosine Sim)
 - [ ] 添加更细粒度的信息熵评估方式
 - [ ] 支持多模态输入
 - [ ] 增强跨文档推理能力

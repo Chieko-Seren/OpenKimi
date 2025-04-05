@@ -1,0 +1,11 @@
+请根据以下框架和上下文信息回答用户的问题:
+
+用户问题: {query}
+
+解决框架:
+{framework}
+
+{optional_useful_context_section}
+{optional_rag_context_section}
+
+请根据框架和上下文生成完整的解决方案： 
