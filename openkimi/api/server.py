@@ -3,6 +3,7 @@ import uuid
 import os
 import argparse
 import sys
+from typing import Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse, JSONResponse # Add JSONResponse
 import uvicorn
