@@ -81,66 +81,45 @@ if [ -n "$AUTO_RELOAD" ]; then
     echo "  Auto-reload: Enabled"
 fi
 
-# Make sure requirements are installed (optional check)
-# pip show fastapi > /dev/null 2>&1
-# if [ $? -ne 0 ]; then
-#    echo "Warning: Required Python packages might not be installed. Run 'pip install -r requirements.txt'"
-# fi
+# Make sure current directory is in Python path
+export PYTHONPATH=$PYTHONPATH:$(pwd)
+echo "Setting PYTHONPATH: $PYTHONPATH"
 
-python -m openkimi.api.server --config "$CONFIG_FILE" --host "$HOST" --port "$PORT" --mcp-candidates "$MCP_CANDIDATES" $AUTO_RELOAD &
-SERVER_PID=$!
-
-# Function to kill server on script exit
-cleanup() {
-    echo "Stopping API server (PID: $SERVER_PID)..."
-    kill $SERVER_PID
-}
-trap cleanup EXIT
-
-# Wait a few seconds for the server to start
-echo "Waiting for server to initialize..."
-sleep 5 
-
-# Check server health
-if curl -sf "$API_URL/health"; then
-    echo "Server started successfully."
-else
-    echo "Error: Server failed to start or is not healthy. Check logs." >&2
-    exit 1
-fi
-
-# --- Open Web UI --- 
-UI_PATH="web/index.html"
+# --- Open Web UI in a separate process --- 
 if $AUTO_OPEN_UI; then
-    echo "Opening Web UI in browser: $UI_PATH"
-    # Use appropriate command for different OS
-    case "$(uname -s)" in
-        Darwin)
-            open "$UI_PATH"
-            ;;
-        Linux)
-            # Try common browsers
-            if command -v xdg-open &> /dev/null; then
-                xdg-open "$UI_PATH"
-            elif command -v gnome-open &> /dev/null; then
-                gnome-open "$UI_PATH"
-            elif command -v kde-open &> /dev/null; then
-                kde-open "$UI_PATH"
-            else
-                echo "Could not detect command to open browser. Please open '$UI_PATH' manually."
-            fi
-            ;;
-        MINGW*|CYGWIN*|MSYS*)
-            start "$UI_PATH"
-            ;;
-        *)
-            echo "Unsupported OS for automatic opening. Please open '$UI_PATH' manually."
-            ;;
-    esac
+    # 在3秒后启动网站
+    (
+        echo "Will open Web UI in 3 seconds..."
+        sleep 3
+        UI_PATH="web/index.html"
+        echo "Opening Web UI in browser: $UI_PATH"
+        case "$(uname -s)" in
+            Darwin)
+                open "$UI_PATH"
+                ;;
+            Linux)
+                if command -v xdg-open &> /dev/null; then
+                    xdg-open "$UI_PATH"
+                elif command -v gnome-open &> /dev/null; then
+                    gnome-open "$UI_PATH"
+                elif command -v kde-open &> /dev/null; then
+                    kde-open "$UI_PATH"
+                else
+                    echo "Could not detect command to open browser. Please open '$UI_PATH' manually."
+                fi
+                ;;
+            MINGW*|CYGWIN*|MSYS*)
+                start "$UI_PATH"
+                ;;
+            *)
+                echo "Unsupported OS for automatic opening. Please open '$UI_PATH' manually."
+                ;;
+        esac
+    ) &
 else
-    echo "Web UI available at: $UI_PATH (relative to project root)"
+    echo "Web UI available at: web/index.html (relative to project root)"
 fi
 
-# Keep the script running to keep the server alive (and allow cleanup)
-echo "API Server running in background (PID: $SERVER_PID). Press Ctrl+C to stop."
-wait $SERVER_PID 
+# Run the server in foreground 
+echo "Running server in foreground..."
+python -m openkimi.api.server --config "$CONFIG_FILE" --host "$HOST" --port "$PORT" --mcp-candidates "$MCP_CANDIDATES" $AUTO_RELOAD
