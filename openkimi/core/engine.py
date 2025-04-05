@@ -45,23 +45,51 @@ class KimiEngine:
         logger.info(f"MCP candidates: {self.mcp_candidates}")
                 
         # 初始化LLM接口和 Tokenizer
-        self.llm_interface = get_llm_interface(self.config["llm"])
-        self.tokenizer = self.llm_interface.get_tokenizer()
-        self.token_counter = TokenCounter(self.tokenizer)
-        self.max_context_tokens = self.llm_interface.get_max_context_length() 
-        # Reserve some tokens for generation and overhead
-        self.max_prompt_tokens = int(self.max_context_tokens * 0.8) 
-        logger.info(f"LLM Max Context Tokens: {self.max_context_tokens}, Max Prompt Tokens: {self.max_prompt_tokens}")
+        try:
+            logger.info("开始初始化LLM接口...")
+            from openkimi.utils.llm_interface import get_llm_interface
+            self.llm_interface = get_llm_interface(self.config["llm"])
+            if self.llm_interface is None:
+                logger.error("LLM接口初始化返回了None")
+                raise RuntimeError("LLM接口初始化失败")
+                
+            self.tokenizer = self.llm_interface.get_tokenizer()
+            self.token_counter = TokenCounter(self.tokenizer)
+            self.max_context_tokens = self.llm_interface.get_max_context_length() 
+            # Reserve some tokens for generation and overhead
+            self.max_prompt_tokens = int(self.max_context_tokens * 0.8) 
+            logger.info(f"LLM Max Context Tokens: {self.max_context_tokens}, Max Prompt Tokens: {self.max_prompt_tokens}")
+        except Exception as e:
+            logger.error(f"初始化LLM接口时出错: {e}")
+            import traceback
+            traceback.print_exc()
+            raise RuntimeError(f"LLM接口初始化失败: {e}")
 
         # 初始化各个模块
-        proc_cfg = self.config.get('processor', {})
-        rag_cfg = self.config.get('rag', {})
-        self.processor = TextProcessor(batch_size=proc_cfg.get('batch_size', 512))
-        self.rag_manager = RAGManager(self.llm_interface, embedding_model_name=rag_cfg.get('embedding_model', 'all-MiniLM-L6-v2'))
-        self.framework_generator = FrameworkGenerator(self.llm_interface) # FrameworkGenerator now also needs recursive logic potentially
+        try:
+            proc_cfg = self.config.get('processor', {})
+            rag_cfg = self.config.get('rag', {})
+            self.processor = TextProcessor(batch_size=proc_cfg.get('batch_size', 512))
+            
+            try:
+                logger.info(f"初始化RAGManager，配置: {rag_cfg}")
+                self.rag_manager = RAGManager(self.llm_interface, embedding_model_name=rag_cfg.get('embedding_model', 'all-MiniLM-L6-v2'))
+            except Exception as rag_error:
+                logger.error(f"初始化RAGManager时出错: {rag_error}")
+                import traceback
+                traceback.print_exc()
+                raise RuntimeError(f"RAG初始化失败: {rag_error}")
+                
+            self.framework_generator = FrameworkGenerator(self.llm_interface) # FrameworkGenerator now also needs recursive logic potentially
+        except Exception as e:
+            logger.error(f"初始化模块时出错: {e}")
+            import traceback
+            traceback.print_exc()
+            raise RuntimeError(f"模块初始化失败: {e}")
         
         # 会话历史
         self.conversation_history: List[Dict[str, str]] = []
+        logger.info("KimiEngine初始化完成")
         
     def _load_config(self, config_path: Optional[str] = None) -> Dict[str, Any]:
         """ Loads configuration from a JSON file, merging with defaults. """
@@ -264,13 +292,37 @@ class KimiEngine:
         rag_cfg = self.config.get('rag', {})
         # 确保llm_interface不会为None
         if self.llm_interface is not None:
-            self.rag_manager = RAGManager(self.llm_interface, embedding_model_name=rag_cfg.get('embedding_model', 'all-MiniLM-L6-v2'))
+            try:
+                logger.info(f"重新初始化RAGManager，配置: {rag_cfg}")
+                self.rag_manager = RAGManager(self.llm_interface, embedding_model_name=rag_cfg.get('embedding_model', 'all-MiniLM-L6-v2'))
+                logger.info("RAGManager重置成功")
+            except Exception as e:
+                logger.error(f"重置RAGManager时出错: {e}")
+                import traceback
+                traceback.print_exc()
+                raise RuntimeError(f"RAG重置失败: {e}")
         else:
             logger.error("Cannot reset RAG manager: llm_interface is None")
             # 重新创建llm_interface
-            from openkimi.utils.llm_interface import get_llm_interface
-            self.llm_interface = get_llm_interface(self.config["llm"])
-            if self.llm_interface is not None:
-                self.rag_manager = RAGManager(self.llm_interface, embedding_model_name=rag_cfg.get('embedding_model', 'all-MiniLM-L6-v2'))
-            else:
-                logger.critical("Failed to recreate llm_interface during reset") 
+            try:
+                from openkimi.utils.llm_interface import get_llm_interface
+                logger.info(f"尝试重新初始化LLM接口，配置: {self.config['llm']}")
+                self.llm_interface = get_llm_interface(self.config["llm"])
+                if self.llm_interface is not None:
+                    logger.info("LLM接口重新初始化成功")
+                    try:
+                        self.rag_manager = RAGManager(self.llm_interface, embedding_model_name=rag_cfg.get('embedding_model', 'all-MiniLM-L6-v2'))
+                        logger.info("RAGManager重置成功")
+                    except Exception as e:
+                        logger.error(f"重置RAGManager时出错: {e}")
+                        import traceback
+                        traceback.print_exc()
+                        raise RuntimeError(f"RAG重置失败: {e}")
+                else:
+                    logger.critical("Failed to recreate llm_interface during reset")
+                    raise RuntimeError("LLM接口重新初始化失败")
+            except Exception as e:
+                logger.critical(f"重新初始化LLM接口时出错: {e}")
+                import traceback
+                traceback.print_exc()
+                raise RuntimeError(f"LLM接口重新初始化失败: {e}") 

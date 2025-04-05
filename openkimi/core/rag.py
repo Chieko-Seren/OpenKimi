@@ -17,11 +17,48 @@ class RAGManager:
             llm_interface: LLM接口，用于生成摘要
             embedding_model_name: 用于生成文本嵌入的Sentence Transformer模型名称
         """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        if llm_interface is None:
+            logger.error("RAGManager初始化失败: llm_interface为None")
+            raise ValueError("LLM接口不能为None")
+            
         self.llm_interface = llm_interface
         self.rag_store: Dict[str, str] = {}  # 摘要 -> 原文本
         self.summary_vectors: Dict[str, np.ndarray] = {} # 摘要 -> 向量
-        self.embedding_model = SentenceTransformer(embedding_model_name)
-        self.summarize_prompt_template = load_prompt('summarize')
+        
+        # 尝试加载embedding模型
+        try:
+            logger.info(f"正在加载embedding模型: {embedding_model_name}")
+            self.embedding_model = SentenceTransformer(embedding_model_name)
+            logger.info("Embedding模型加载成功")
+        except Exception as e:
+            logger.error(f"加载embedding模型时出错: {e}")
+            import traceback
+            traceback.print_exc()
+            # 尝试使用备用模型
+            try:
+                logger.info("尝试加载备用embedding模型: paraphrase-MiniLM-L3-v2")
+                self.embedding_model = SentenceTransformer('paraphrase-MiniLM-L3-v2')
+                logger.info("备用embedding模型加载成功")
+            except Exception as e2:
+                logger.error(f"加载备用embedding模型时出错: {e2}")
+                traceback.print_exc()
+                raise RuntimeError(f"无法加载任何embedding模型: {e2}")
+        
+        # 加载摘要提示模板
+        try:
+            self.summarize_prompt_template = load_prompt('summarize')
+        except Exception as e:
+            logger.error(f"加载摘要提示模板时出错: {e}")
+            # 使用硬编码的备用提示模板
+            logger.info("使用硬编码的备用摘要提示模板")
+            self.summarize_prompt_template = """请对以下文本进行简洁的摘要，保留关键信息:
+
+{text}
+
+摘要:"""
         
     def summarize_text(self, text: str) -> str:
         """
