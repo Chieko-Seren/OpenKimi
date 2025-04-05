@@ -100,30 +100,23 @@
 
                 <!-- Suggestion Prompts -->
                 <div class="mt-8 grid grid-cols-1 md:grid-cols-3 gap-4 w-full max-w-3xl">
-                    <button @click="useSuggestion('PPT轻松搞定，秘诀在这！')" class="bg-white p-3 rounded-lg shadow hover:bg-gray-50 text-left text-sm text-gray-700 flex items-center space-x-2">
-                        <ion-icon name="easel-outline"></ion-icon>
-                        <span>PPT轻松搞定，秘诀在这！</span>
+                     <!-- Replace static buttons with v-for -->
+                     <button v-for="suggestion in suggestions" :key="suggestion.title" 
+                             @click="useSuggestion(suggestion.title)" 
+                             class="bg-white p-3 rounded-lg shadow hover:bg-gray-50 text-left text-sm text-gray-700 flex items-center space-x-2">
+                        <!-- Use dynamic icon based on suggestion data -->
+                        <ion-icon :name="suggestion.icon || 'chatbubble-outline'" class="text-lg"></ion-icon> 
+                        <span>{{ suggestion.title }}</span>
                     </button>
-                     <button @click="useSuggestion('REM睡眠：拯救你的睡眠质量')" class="bg-white p-3 rounded-lg shadow hover:bg-gray-50 text-left text-sm text-gray-700 flex items-center space-x-2">
-                        <ion-icon name="cloudy-night-outline"></ion-icon>
-                        <span>REM睡眠：拯救你的睡眠质量</span>
-                    </button>
-                     <button @click="useSuggestion('AI时代，什么能力不可被替代？')" class="bg-white p-3 rounded-lg shadow hover:bg-gray-50 text-left text-sm text-gray-700 flex items-center space-x-2">
-                        <ion-icon name="sparkles-outline"></ion-icon>
-                        <span>AI时代，什么能力不可被替代？</span>
-                    </button>
-                    <button @click="useSuggestion('《诗经》中的我命由我不由天')" class="bg-white p-3 rounded-lg shadow hover:bg-gray-50 text-left text-sm text-gray-700 flex items-center space-x-2">
-                        <ion-icon name="book-outline"></ion-icon>
-                        <span>《诗经》中的我命由我不由天</span>
-                    </button>
-                    <button @click="useSuggestion('为什么澳洲不愿改造内陆荒漠？')" class="bg-white p-3 rounded-lg shadow hover:bg-gray-50 text-left text-sm text-gray-700 flex items-center space-x-2">
-                        <ion-icon name="earth-outline"></ion-icon>
-                        <span>为什么澳洲不愿改造内陆荒漠？</span>
-                    </button>
-                     <button class="bg-white p-3 rounded-lg shadow hover:bg-gray-50 text-left text-sm text-gray-700 flex items-center space-x-2 opacity-50 cursor-not-allowed">
-                        <ion-icon name="alert-circle-outline"></ion-icon>
-                        <span>登录一下 和 kimi一起登月</span>
-                    </button>
+
+                    <!-- Placeholder for loading suggestions -->
+                     <div v-if="suggestionsLoading" class="col-span-1 md:col-span-3 text-center text-gray-500">
+                        加载建议中...
+                    </div>
+                     <!-- Placeholder if suggestions fail to load -->
+                     <div v-if="!suggestionsLoading && suggestions.length === 0" class="col-span-1 md:col-span-3 text-center text-gray-500">
+                        无法加载建议。
+                    </div>
                 </div>
 
             </div>

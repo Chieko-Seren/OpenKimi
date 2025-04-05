@@ -4,8 +4,10 @@ import os
 import argparse
 import sys
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import StreamingResponse # For future streaming
+from fastapi.responses import StreamingResponse, JSONResponse # Add JSONResponse
 import uvicorn
+import requests # Import requests
+import json # Import json
 
 # Add project root to sys.path to allow importing openkimi
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -124,6 +126,59 @@ def create_chat_completion(request: ChatCompletionRequest):
         choices=[choice],
         usage=usage
     )
+
+@app.get("/api/suggestions", 
+         summary="Get dynamic suggestion prompts", 
+         tags=["Suggestions"])
+async def get_suggestions():
+    """
+    Fetches suggestion prompts from an external source.
+    """
+    suggestions_url = "https://openkimi.chieko.seren.living/news"
+    default_suggestions = [
+        {"title": "如何写一份出色的商业计划书？", "icon": "document-text-outline"},
+        {"title": "解释量子计算的基本原理。", "icon": "hardware-chip-outline"},
+        {"title": "给我一些关于地中海饮食的建议。", "icon": "restaurant-outline"},
+        {"title": "比较Python和JavaScript的主要区别。", "icon": "code-slash-outline"},
+        {"title": "如何有效地学习一门新语言？", "icon": "language-outline"},
+        {"title": "当前全球经济面临的主要挑战是什么？", "icon": "trending-up-outline"}
+    ]
+    try:
+        response = requests.get(suggestions_url, timeout=5) # Add timeout
+        response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+        data = response.json()
+        
+        # Assuming the API returns a list of objects, each with a 'title' field.
+        # Adjust parsing based on the actual API response structure.
+        if isinstance(data, list) and len(data) > 0:
+            suggestions = []
+            for item in data:
+                # Try to find a title-like field
+                title = item.get('title') or item.get('name') or item.get('headline')
+                if title and isinstance(title, str):
+                    # Assign a default icon or try to guess based on keywords?
+                    icon = item.get('icon', 'newspaper-outline') # Default icon
+                    suggestions.append({"title": title.strip(), "icon": icon})
+                if len(suggestions) >= 6: # Limit to 6 suggestions like the original UI
+                    break 
+            if suggestions: # If we got any valid suggestions
+                return JSONResponse(content=suggestions)
+            else:
+                print(f"Warning: Fetched data from {suggestions_url} but couldn't extract valid titles. Using defaults.")
+                return JSONResponse(content=default_suggestions)
+        else:
+            print(f"Warning: Fetched data from {suggestions_url} is not a non-empty list. Using defaults.")
+            return JSONResponse(content=default_suggestions)
+
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching suggestions from {suggestions_url}: {e}. Using defaults.")
+        return JSONResponse(content=default_suggestions)
+    except json.JSONDecodeError as e:
+        print(f"Error decoding JSON from {suggestions_url}: {e}. Using defaults.")
+        return JSONResponse(content=default_suggestions)
+    except Exception as e:
+        print(f"An unexpected error occurred while fetching suggestions: {e}. Using defaults.")
+        return JSONResponse(content=default_suggestions)
 
 @app.get("/health", summary="Health Check", tags=["Management"])
 def health_check():

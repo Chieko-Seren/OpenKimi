@@ -9,6 +9,8 @@ const App = {
         const apiStatus = ref('未知');
         const chatHistory = ref(null); // Ref for the chat history div
         const chatStarted = ref(false); // New state variable
+        const suggestions = ref([]); // New state for suggestions
+        const suggestionsLoading = ref(true); // State for loading suggestions
 
         // --- API Interaction ---
         const checkApiStatus = async () => {
@@ -28,6 +30,29 @@ const App = {
             } catch (error) {
                 console.error('API Status Check Error:', error);
                 apiStatus.value = `连接失败`; // Simplified error message
+            }
+        };
+
+        const fetchSuggestions = async () => {
+            suggestionsLoading.value = true;
+            suggestions.value = []; // Clear previous suggestions
+            try {
+                const response = await fetch(`${apiUrl.value}/api/suggestions`);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                if (Array.isArray(data)) {
+                    suggestions.value = data;
+                } else {
+                     console.error("Fetched suggestions data is not an array:", data);
+                     // Keep suggestions empty or use defaults handled by API?
+                }
+            } catch (error) {
+                console.error('Error fetching suggestions:', error);
+                // Keep suggestions empty, API provides defaults on error
+            } finally {
+                suggestionsLoading.value = false;
             }
         };
 
@@ -113,6 +138,7 @@ const App = {
             isLoading.value = false;
             chatStarted.value = false; // Go back to initial view
             // API server reset happens automatically on next request in current implementation
+            fetchSuggestions(); // Fetch new suggestions when resetting to initial view
         };
 
         // --- UI Helpers ---
@@ -152,6 +178,7 @@ const App = {
         // --- Lifecycle Hooks ---
         onMounted(() => {
             checkApiStatus(); // Check API status on load
+            fetchSuggestions(); // Fetch suggestions on load
         });
 
         return {
@@ -162,6 +189,8 @@ const App = {
             apiStatus,
             chatHistory,
             chatStarted, // Expose new state
+            suggestions, // Expose suggestions
+            suggestionsLoading, // Expose loading state
             sendMessage, // Keep original for internal use
             startOrSendMessage, // Use this for UI buttons/enter key
             resetChat,
