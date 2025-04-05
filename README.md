@@ -4,7 +4,7 @@
 
 _让LLM突破上下文长度限制的宇宙飞船_
 
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![License](https://img.shields.io/badge/License-MIT%20License-blue.svg)](https://opensource.org/licenses/MIT%20License)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![Stars](https://img.shields.io/github/stars/Chieko-Seren/openkimi.svg?style=social&label=Star)](https://github.com/yourusername/openkimi)
 [![Issues](https://img.shields.io/github/issues/Chieko-Seren/openkimi.svg)](https://github.com/yourusername/openkimi/issues)
