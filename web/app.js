@@ -88,21 +88,51 @@ const App = {
                 const messagesForApi = history.value.map(msg => ({ role: msg.role, content: msg.content }));
                 
                 console.log("Sending messages to API:", JSON.stringify(messagesForApi));
-
-                const response = await fetch(`${apiUrl.value}/v1/chat/completions`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        model: 'openkimi-model', 
-                        messages: messagesForApi,
-                    }),
-                });
-
-                if (!response.ok) {
-                    const errorData = await response.json().catch(() => ({ detail: '无法解析错误响应' }));
-                    throw new Error(`API Error (${response.status}): ${errorData.detail || response.statusText}`);
+                
+                // 添加重试逻辑
+                let retries = 3;
+                let response = null;
+                
+                while (retries > 0) {
+                    try {
+                        response = await fetch(`${apiUrl.value}/v1/chat/completions`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({
+                                model: 'openkimi-model', 
+                                messages: messagesForApi,
+                            }),
+                        });
+                        
+                        // 如果响应成功，跳出循环
+                        if (response.ok) {
+                            break;
+                        }
+                        
+                        // 如果是503错误（服务器初始化问题），等待一会再重试
+                        if (response.status === 503) {
+                            console.log(`服务器报告503错误，剩余重试次数: ${retries-1}`);
+                            await new Promise(resolve => setTimeout(resolve, 1000)); // 等待1秒
+                            retries--;
+                        } else {
+                            // 其他错误直接跳出循环
+                            break;
+                        }
+                    } catch (fetchError) {
+                        console.error("Fetch error:", fetchError);
+                        retries--;
+                        if (retries > 0) {
+                            console.log(`网络错误，剩余重试次数: ${retries}`);
+                            await new Promise(resolve => setTimeout(resolve, 1000)); // 等待1秒
+                        }
+                    }
+                }
+                
+                if (!response || !response.ok) {
+                    const errorData = await response?.json().catch(() => ({ detail: '无法解析错误响应' }));
+                    throw new Error(`API Error (${response?.status}): ${errorData.detail || response?.statusText || "无法连接到服务器"}`);
                 }
 
                 const data = await response.json();

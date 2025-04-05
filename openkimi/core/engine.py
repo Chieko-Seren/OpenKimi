@@ -268,6 +268,7 @@ class KimiEngine:
         else:
             logger.error("Cannot reset RAG manager: llm_interface is None")
             # 重新创建llm_interface
+            from openkimi.utils.llm_interface import get_llm_interface
             self.llm_interface = get_llm_interface(self.config["llm"])
             if self.llm_interface is not None:
                 self.rag_manager = RAGManager(self.llm_interface, embedding_model_name=rag_cfg.get('embedding_model', 'all-MiniLM-L6-v2'))

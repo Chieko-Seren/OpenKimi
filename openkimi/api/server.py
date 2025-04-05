@@ -59,12 +59,22 @@ def initialize_engine(args):
                             engine.config.get("llm", {}).get("model_path") or \
                             f"openkimi-{engine.config.get('llm', {}).get('type', 'unknown')}"
         print(f"Kimi Engine initialized successfully. Using model identifier: {engine_model_name}")
+        
+        # 验证engine和llm_interface是否正确初始化
+        if engine.llm_interface is None:
+            print("WARNING: engine.llm_interface is None after initialization!")
+            # 尝试重新初始化llm_interface
+            engine.llm_interface = get_llm_interface(engine.config["llm"])
+            if engine.llm_interface is None:
+                print("CRITICAL: Failed to recreate llm_interface!")
+                
     except Exception as e:
         print(f"FATAL: Failed to initialize KimiEngine: {e}")
-        # You might want to exit here if the engine is critical
-        # sys.exit(1)
+        # Import traceback to print full stack trace
+        import traceback
+        traceback.print_exc()
         # For now, let the API start but endpoints will fail
-        engine = None 
+        engine = None
 
 @app.post("/v1/chat/completions", 
           response_model=ChatCompletionResponse, 
@@ -98,7 +108,17 @@ def create_chat_completion(request: ChatCompletionRequest):
     # Simple approach for now: Reset engine, ingest system/doc prompts, then run user query.
     # This is INEFFICIENT for multi-turn conversations via API.
     # A better approach would modify KimiEngine to accept message history.
-    engine.reset() 
+    try:
+        engine.reset()
+        logger.info("Engine reset successfully")
+    except Exception as e:
+        logger.error(f"Error resetting engine: {e}")
+        import traceback
+        traceback.print_exc()
+        # 如果reset失败但engine和llm_interface仍然存在，可以继续
+        if engine is None or engine.llm_interface is None:
+            raise HTTPException(status_code=503, detail="Failed to reset KimiEngine. Try again later.")
+    
     last_user_message = None
     for message in request.messages:
         if message.role == "system":
