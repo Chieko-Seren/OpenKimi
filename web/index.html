@@ -88,8 +88,16 @@
                             <button class="p-1 rounded hover:bg-gray-100">
                                 <ion-icon name="cube-outline" class="text-xl"></ion-icon>
                             </button>
-                             <button class="p-1 rounded hover:bg-gray-100">
+                             <button @click="triggerFileUpload" class="p-1 rounded hover:bg-gray-100" :class="{'text-blue-500': uploadedFiles.length > 0}">
                                 <ion-icon name="attach-outline" class="text-xl"></ion-icon>
+                                <input 
+                                    type="file" 
+                                    ref="fileInput" 
+                                    @change="handleFileUpload" 
+                                    accept=".pdf,.docx,.txt,.doc" 
+                                    multiple
+                                    class="hidden" 
+                                />
                             </button>
                             <button @click="startOrSendMessage" :disabled="isLoading || userInput.trim() === ''" class="p-1 rounded hover:bg-gray-100 disabled:opacity-50">
                                 <ion-icon name="send-outline" class="text-xl"></ion-icon>
@@ -134,7 +142,7 @@
                 <!-- Chat History -->
                 <div class="chat-history flex-grow overflow-y-auto mb-4 pr-2 space-y-4" ref="chatHistory">
                      <div v-for="message in history" :key="message.id" :class="['flex', message.role === 'user' ? 'justify-end' : 'justify-start']">
-                        <div :class="['p-3 rounded-lg max-w-xl shadow', message.role === 'user' ? 'bg-blue-500 text-white' : 'bg-white text-gray-800']">
+                        <div :class="['p-3 rounded-lg max-w-xl shadow', message.role === 'user' ? 'bg-blue-500 text-white' : message.role === 'system' ? 'bg-gray-200 text-gray-800' : 'bg-white text-gray-800']">
                             <!-- Role can be omitted or styled differently in chat view -->
                              <!-- <strong class="capitalize">{{ message.role }}:</strong> -->
                             <div v-html="renderMarkdown(message.content)" class="prose prose-sm max-w-none"></div>
@@ -152,10 +160,33 @@
                             </div>
                         </div>
                     </div>
+                    <!-- File uploading indicator -->
+                    <div v-if="isUploading" class="flex justify-start">
+                        <div class="p-3 rounded-lg max-w-xl bg-white text-gray-800 shadow">
+                            <div class="flex items-center justify-center">
+                                <svg class="animate-spin h-5 w-5 text-gray-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                <span class="ml-2 text-sm text-gray-500">文件上传中...</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Input Area (Similar to initial view's input box) -->
                  <div class="w-full bg-white rounded-lg shadow-lg p-4 flex flex-col relative border border-gray-200">
+                    <!-- Uploaded files list -->
+                    <div v-if="uploadedFiles.length > 0" class="mb-2 border-b pb-2">
+                        <div class="text-xs text-gray-500 mb-1">已上传文件:</div>
+                        <div class="flex flex-wrap gap-2">
+                            <div v-for="file in uploadedFiles" :key="file.id" class="flex items-center bg-gray-100 rounded px-2 py-1 text-xs">
+                                <ion-icon name="document-outline" class="mr-1 text-gray-500"></ion-icon>
+                                <span class="truncate max-w-[150px]">{{ file.name }}</span>
+                                <span class="text-xs ml-1 text-gray-400">({{ file.status }})</span>
+                            </div>
+                        </div>
+                    </div>
                     <textarea 
                         v-model="userInput"
                         @keydown.enter.prevent="startOrSendMessage"
@@ -175,8 +206,16 @@
                             <button class="p-1 rounded hover:bg-gray-100">
                                 <ion-icon name="cube-outline" class="text-xl"></ion-icon>
                             </button>
-                             <button class="p-1 rounded hover:bg-gray-100">
+                             <button @click="triggerFileUpload" class="p-1 rounded hover:bg-gray-100" :class="{'text-blue-500': uploadedFiles.length > 0}">
                                 <ion-icon name="attach-outline" class="text-xl"></ion-icon>
+                                <input 
+                                    type="file" 
+                                    ref="fileInput" 
+                                    @change="handleFileUpload" 
+                                    accept=".pdf,.docx,.txt,.doc" 
+                                    multiple
+                                    class="hidden" 
+                                />
                             </button>
                             <button @click="startOrSendMessage" :disabled="isLoading || userInput.trim() === ''" class="p-1 rounded hover:bg-gray-100 disabled:opacity-50">
                                 <ion-icon name="send-outline" class="text-xl"></ion-icon>

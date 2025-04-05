@@ -11,6 +11,9 @@ const App = {
         const chatStarted = ref(false); // New state variable
         const suggestions = ref([]); // New state for suggestions
         const suggestionsLoading = ref(true); // State for loading suggestions
+        const fileInput = ref(null); // Ref for file input element
+        const uploadedFiles = ref([]); // 存储已上传的文件
+        const isUploading = ref(false); // 文件上传中状态
 
         // --- API Interaction ---
         const checkApiStatus = async () => {
@@ -57,6 +60,144 @@ const App = {
                 // Keep suggestions empty, API provides defaults on error
             } finally {
                 suggestionsLoading.value = false;
+            }
+        };
+
+        // 处理文件上传
+        const handleFileUpload = async (event) => {
+            const files = event.target.files;
+            if (!files || files.length === 0) return;
+            
+            isUploading.value = true;
+            
+            try {
+                for (let i = 0; i < files.length; i++) {
+                    const file = files[i];
+                    // 检查文件类型
+                    const fileType = file.type;
+                    const fileName = file.name;
+                    const fileExtension = fileName.split('.').pop().toLowerCase();
+                    
+                    // 检查文件类型和扩展名
+                    const allowedTypes = [
+                        'application/pdf', 
+                        'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 
+                        'text/plain',
+                        'application/msword'
+                    ];
+                    const allowedExtensions = ['pdf', 'docx', 'txt', 'doc'];
+                    
+                    if (!allowedTypes.includes(fileType) && !allowedExtensions.includes(fileExtension)) {
+                        throw new Error(`不支持的文件类型: ${fileName}。请上传 PDF、DOCX 或 TXT 文件。`);
+                    }
+                    
+                    // 创建FormData来上传文件
+                    const formData = new FormData();
+                    formData.append('file', file);
+                    
+                    const response = await fetch(`${apiUrl.value}/v1/files/upload`, {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    if (!response.ok) {
+                        const errorData = await response.json().catch(() => ({ detail: '上传失败' }));
+                        throw new Error(`文件上传失败: ${errorData.detail || response.statusText}`);
+                    }
+                    
+                    const data = await response.json();
+                    console.log("File upload response:", data);
+                    
+                    // 添加到已上传文件列表
+                    uploadedFiles.value.push({
+                        id: data.file_id || Date.now(),
+                        name: fileName,
+                        type: fileType,
+                        status: '已上传'
+                    });
+                    
+                    // 将上传成功的消息添加到聊天历史
+                    if (!chatStarted.value) {
+                        chatStarted.value = true;
+                        await nextTick();
+                    }
+                    
+                    // 添加系统消息，显示文件已上传
+                    history.value.push({
+                        id: Date.now(),
+                        role: 'system',
+                        content: `文件 "${fileName}" 已上传成功，正在分析...`
+                    });
+                    
+                    // 系统消息处理文件
+                    await ingestFile(data.file_id, fileName);
+                }
+            } catch (error) {
+                console.error('File upload error:', error);
+                history.value.push({
+                    id: Date.now(),
+                    role: 'system',
+                    content: `文件上传错误: ${error.message}`
+                });
+            } finally {
+                isUploading.value = false;
+                // 清空文件选择器，允许重新选择相同文件
+                if (fileInput.value) {
+                    fileInput.value.value = '';
+                }
+                scrollToBottom();
+            }
+        };
+        
+        // 处理文件摄入
+        const ingestFile = async (fileId, fileName) => {
+            try {
+                const response = await fetch(`${apiUrl.value}/v1/files/ingest`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        file_id: fileId
+                    })
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({ detail: '处理失败' }));
+                    throw new Error(`文件处理失败: ${errorData.detail || response.statusText}`);
+                }
+                
+                const data = await response.json();
+                
+                // 更新文件状态
+                const fileIndex = uploadedFiles.value.findIndex(f => f.id === fileId);
+                if (fileIndex !== -1) {
+                    uploadedFiles.value[fileIndex].status = '已处理';
+                }
+                
+                // 添加助手消息，表示文件已处理
+                history.value.push({
+                    id: Date.now(),
+                    role: 'assistant',
+                    content: `我已成功处理文件 "${fileName}"。您可以开始提问关于该文件的内容。`
+                });
+                
+                scrollToBottom();
+            } catch (error) {
+                console.error('File ingest error:', error);
+                history.value.push({
+                    id: Date.now(),
+                    role: 'assistant',
+                    content: `文件处理错误: ${error.message}`
+                });
+                scrollToBottom();
+            }
+        };
+        
+        // 触发文件上传对话框
+        const triggerFileUpload = () => {
+            if (fileInput.value) {
+                fileInput.value.click();
             }
         };
 
@@ -170,6 +311,7 @@ const App = {
             history.value = [];
             userInput.value = '';
             isLoading.value = false;
+            uploadedFiles.value = []; // 清空已上传的文件列表
             chatStarted.value = false; // Go back to initial view
             // API server reset happens automatically on next request in current implementation
             fetchSuggestions(); // Fetch new suggestions when resetting to initial view
@@ -225,6 +367,11 @@ const App = {
             chatStarted, // Expose new state
             suggestions, // Expose suggestions
             suggestionsLoading, // Expose loading state
+            fileInput, // 文件输入引用
+            uploadedFiles, // 已上传的文件
+            isUploading, // 文件上传状态
+            handleFileUpload, // 文件上传处理
+            triggerFileUpload, // 触发文件上传对话框
             sendMessage, // Keep original for internal use
             startOrSendMessage, // Use this for UI buttons/enter key
             resetChat,

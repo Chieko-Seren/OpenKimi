@@ -4,8 +4,9 @@ import os
 import argparse
 import sys
 import logging
-from typing import Optional
-from fastapi import FastAPI, HTTPException
+import shutil
+from typing import Optional, List
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Depends, BackgroundTasks
 from fastapi.responses import StreamingResponse, JSONResponse # Add JSONResponse
 from fastapi.middleware.cors import CORSMiddleware  # 导入CORS中间件
 import uvicorn
@@ -42,6 +43,13 @@ app.add_middleware(
 # This is simple; for production, consider dependency injection frameworks
 engine: Optional[KimiEngine] = None
 engine_model_name: str = "openkimi-engine"
+
+# 文件上传存储目录
+UPLOAD_DIR = os.path.join(project_root, "uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+# 存储已上传文件的信息
+uploaded_files = {}
 
 def initialize_engine(args):
     """Initializes the global KimiEngine based on args."""
@@ -274,6 +282,192 @@ def health_check():
          return {"status": "ok", "engine_initialized": True, "model_name": engine_model_name}
     else:
          return {"status": "error", "engine_initialized": False, "detail": "KimiEngine failed to initialize."}
+
+# 处理文件上传
+@app.post("/v1/files/upload", tags=["Files"])
+async def upload_file(file: UploadFile = File(...)):
+    """上传文件到服务器"""
+    if engine is None:
+        raise HTTPException(status_code=503, detail="KimiEngine not initialized. Check server logs.")
+    
+    # 检查文件格式
+    filename = file.filename
+    file_extension = filename.split(".")[-1].lower()
+    allowed_extensions = ["pdf", "docx", "txt", "doc"]
+    
+    if file_extension not in allowed_extensions:
+        raise HTTPException(status_code=400, detail=f"不支持的文件格式: {file_extension}。支持的格式: {', '.join(allowed_extensions)}")
+    
+    # 生成唯一文件ID
+    file_id = str(uuid.uuid4())
+    
+    # 创建文件存储路径
+    file_path = os.path.join(UPLOAD_DIR, f"{file_id}_{filename}")
+    
+    try:
+        # 保存上传的文件
+        with open(file_path, "wb") as f:
+            shutil.copyfileobj(file.file, f)
+        
+        # 存储文件信息
+        uploaded_files[file_id] = {
+            "file_id": file_id,
+            "filename": filename,
+            "path": file_path,
+            "status": "uploaded",
+            "timestamp": time.time()
+        }
+        
+        logger.info(f"文件已上传: {filename}, ID: {file_id}")
+        
+        return {"status": "success", "file_id": file_id, "filename": filename}
+    
+    except Exception as e:
+        logger.error(f"文件上传失败: {e}")
+        raise HTTPException(status_code=500, detail=f"文件上传失败: {str(e)}")
+
+# 处理文件摄入
+@app.post("/v1/files/ingest", tags=["Files"])
+async def ingest_file(file_data: dict, background_tasks: BackgroundTasks):
+    """将文件内容摄入到KimiEngine"""
+    if engine is None:
+        raise HTTPException(status_code=503, detail="KimiEngine not initialized. Check server logs.")
+    
+    file_id = file_data.get("file_id")
+    if not file_id or file_id not in uploaded_files:
+        raise HTTPException(status_code=404, detail=f"文件ID不存在: {file_id}")
+    
+    file_info = uploaded_files[file_id]
+    file_path = file_info["path"]
+    filename = file_info["filename"]
+    
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail=f"文件不存在: {filename}")
+    
+    try:
+        # 更新文件状态
+        uploaded_files[file_id]["status"] = "processing"
+        
+        # 处理不同类型的文件
+        file_extension = filename.split(".")[-1].lower()
+        
+        if file_extension == "pdf":
+            background_tasks.add_task(process_pdf, file_id, file_path)
+            return {"status": "processing", "file_id": file_id, "message": "PDF文件正在处理中"}
+        
+        elif file_extension in ["docx", "doc"]:
+            background_tasks.add_task(process_docx, file_id, file_path)
+            return {"status": "processing", "file_id": file_id, "message": "Word文档正在处理中"}
+        
+        elif file_extension == "txt":
+            background_tasks.add_task(process_txt, file_id, file_path)
+            return {"status": "processing", "file_id": file_id, "message": "文本文件正在处理中"}
+        
+        else:
+            raise HTTPException(status_code=400, detail=f"不支持的文件类型: {file_extension}")
+    
+    except Exception as e:
+        logger.error(f"文件摄入失败: {e}")
+        uploaded_files[file_id]["status"] = "error"
+        raise HTTPException(status_code=500, detail=f"文件摄入失败: {str(e)}")
+
+# 获取文件状态
+@app.get("/v1/files/{file_id}/status", tags=["Files"])
+async def get_file_status(file_id: str):
+    """获取文件处理状态"""
+    if file_id not in uploaded_files:
+        raise HTTPException(status_code=404, detail=f"文件ID不存在: {file_id}")
+    
+    return uploaded_files[file_id]
+
+# 处理PDF文件
+async def process_pdf(file_id: str, file_path: str):
+    """处理PDF文件并摄入到KimiEngine"""
+    try:
+        # 尝试导入PyPDF2
+        try:
+            import PyPDF2
+        except ImportError:
+            logger.error("PyPDF2库未安装，无法处理PDF文件")
+            uploaded_files[file_id]["status"] = "error"
+            return
+        
+        with open(file_path, "rb") as file:
+            pdf_reader = PyPDF2.PdfReader(file)
+            text_content = ""
+            
+            # 提取每一页的文本
+            for page_num in range(len(pdf_reader.pages)):
+                page = pdf_reader.pages[page_num]
+                text_content += page.extract_text() + "\n\n"
+        
+        # 摄入文本到KimiEngine
+        if text_content:
+            engine.ingest(text_content)
+            uploaded_files[file_id]["status"] = "ingested"
+            logger.info(f"PDF文件已成功摄入: {file_id}")
+        else:
+            logger.warning(f"PDF文件内容为空: {file_id}")
+            uploaded_files[file_id]["status"] = "empty"
+    
+    except Exception as e:
+        logger.error(f"处理PDF文件时出错: {e}")
+        uploaded_files[file_id]["status"] = "error"
+        uploaded_files[file_id]["error"] = str(e)
+
+# 处理Word文档
+async def process_docx(file_id: str, file_path: str):
+    """处理Word文档并摄入到KimiEngine"""
+    try:
+        # 尝试导入docx库
+        try:
+            import docx
+        except ImportError:
+            logger.error("docx库未安装，无法处理Word文档")
+            uploaded_files[file_id]["status"] = "error"
+            return
+        
+        doc = docx.Document(file_path)
+        text_content = ""
+        
+        # 提取文档中的段落文本
+        for para in doc.paragraphs:
+            text_content += para.text + "\n"
+        
+        # 摄入文本到KimiEngine
+        if text_content:
+            engine.ingest(text_content)
+            uploaded_files[file_id]["status"] = "ingested"
+            logger.info(f"Word文档已成功摄入: {file_id}")
+        else:
+            logger.warning(f"Word文档内容为空: {file_id}")
+            uploaded_files[file_id]["status"] = "empty"
+    
+    except Exception as e:
+        logger.error(f"处理Word文档时出错: {e}")
+        uploaded_files[file_id]["status"] = "error"
+        uploaded_files[file_id]["error"] = str(e)
+
+# 处理纯文本文件
+async def process_txt(file_id: str, file_path: str):
+    """处理纯文本文件并摄入到KimiEngine"""
+    try:
+        with open(file_path, "r", encoding="utf-8") as file:
+            text_content = file.read()
+        
+        # 摄入文本到KimiEngine
+        if text_content:
+            engine.ingest(text_content)
+            uploaded_files[file_id]["status"] = "ingested"
+            logger.info(f"文本文件已成功摄入: {file_id}")
+        else:
+            logger.warning(f"文本文件内容为空: {file_id}")
+            uploaded_files[file_id]["status"] = "empty"
+    
+    except Exception as e:
+        logger.error(f"处理文本文件时出错: {e}")
+        uploaded_files[file_id]["status"] = "error"
+        uploaded_files[file_id]["error"] = str(e)
 
 def cli():
     parser = argparse.ArgumentParser(description="Run the OpenKimi FastAPI Server.")
