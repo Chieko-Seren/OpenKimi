@@ -262,4 +262,14 @@ class KimiEngine:
         self.conversation_history = []
         # Reset RAG manager as well (clears stored summaries and vectors)
         rag_cfg = self.config.get('rag', {})
-        self.rag_manager = RAGManager(self.llm_interface, embedding_model_name=rag_cfg.get('embedding_model', 'all-MiniLM-L6-v2')) 
+        # 确保llm_interface不会为None
+        if self.llm_interface is not None:
+            self.rag_manager = RAGManager(self.llm_interface, embedding_model_name=rag_cfg.get('embedding_model', 'all-MiniLM-L6-v2'))
+        else:
+            logger.error("Cannot reset RAG manager: llm_interface is None")
+            # 重新创建llm_interface
+            self.llm_interface = get_llm_interface(self.config["llm"])
+            if self.llm_interface is not None:
+                self.rag_manager = RAGManager(self.llm_interface, embedding_model_name=rag_cfg.get('embedding_model', 'all-MiniLM-L6-v2'))
+            else:
+                logger.critical("Failed to recreate llm_interface during reset") 

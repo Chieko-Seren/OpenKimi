@@ -3,6 +3,7 @@ import uuid
 import os
 import argparse
 import sys
+import logging
 from typing import Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse, JSONResponse # Add JSONResponse
@@ -10,6 +11,9 @@ from fastapi.middleware.cors import CORSMiddleware  # 导入CORS中间件
 import uvicorn
 import requests # Import requests
 import json # Import json
+
+# Setup logging
+logger = logging.getLogger(__name__)
 
 # Add project root to sys.path to allow importing openkimi
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -75,6 +79,10 @@ def create_chat_completion(request: ChatCompletionRequest):
     """
     if engine is None:
         raise HTTPException(status_code=503, detail="KimiEngine not initialized. Check server logs.")
+    
+    if engine.llm_interface is None:
+        logger.error("KimiEngine has no LLM interface. This might be due to a reset operation.")
+        raise HTTPException(status_code=503, detail="KimiEngine not fully initialized. Try again in a moment.")
 
     if request.stream:
         raise HTTPException(status_code=400, detail="Streaming responses are not supported in this version.")
