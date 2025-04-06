@@ -51,7 +51,7 @@ class TextProcessor:
     
     def calculate_entropy(self, text: str) -> float:
         """
-        计算文本的信息熵（基于词频）
+        计算文本的信息熵（基于字符频率）
         
         Args:
             text: 输入文本
@@ -59,20 +59,17 @@ class TextProcessor:
         Returns:
             信息熵值
         """
-        # 分词
-        words = re.findall(r'\w+|[^\w\s]', text)
-        
-        if not words:
+        if not text:
             return 0.0
             
-        # 计算词频
-        word_counts = Counter(words)
-        total_words = len(words)
+        # 计算字符频率而不是词频
+        char_counts = Counter(text)
+        total_chars = len(text)
         
         # 计算信息熵
         entropy = 0.0
-        for word, count in word_counts.items():
-            probability = count / total_words
+        for char, count in char_counts.items():
+            probability = count / total_chars
             entropy -= probability * math.log2(probability)
             
         return entropy

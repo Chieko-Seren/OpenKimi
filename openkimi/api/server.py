@@ -645,12 +645,33 @@ async def create_cot_chat_completion(request: ChatCompletionRequest):
     """
     使用Chain-of-Thought提示词增强的聊天完成功能
     """
+    # 添加详细日志以便调试
+    logger.info("接收到CoT请求。检查引擎状态...")
+    logger.info(f"引擎状态: {'已初始化' if engine is not None else '未初始化'}")
+    if engine is not None:
+        logger.info(f"LLM接口状态: {'已初始化' if engine.llm_interface is not None else '未初始化'}")
+    
     if engine is None:
+        logger.error("严重错误: KimiEngine未初始化，无法处理CoT请求")
         raise HTTPException(status_code=503, detail="KimiEngine not initialized. Check server logs.")
     
     if engine.llm_interface is None:
-        logger.error("KimiEngine has no LLM interface. This might be due to a reset operation.")
-        raise HTTPException(status_code=503, detail="KimiEngine not fully initialized. Try again in a moment.")
+        logger.error("严重错误: KimiEngine的LLM接口未初始化，可能是reset操作导致或初始化失败")
+        # 尝试重新初始化LLM接口
+        logger.info("尝试重新初始化LLM接口...")
+        try:
+            from openkimi.utils.llm_interface import get_llm_interface
+            engine.llm_interface = get_llm_interface(engine.config["llm"])
+            if engine.llm_interface is None:
+                logger.error("LLM接口重新初始化失败")
+                raise HTTPException(status_code=503, detail="KimiEngine not fully initialized and repair attempt failed. Try again in a moment.")
+            else:
+                logger.info("LLM接口重新初始化成功")
+        except Exception as e:
+            logger.error(f"尝试修复LLM接口时出错: {e}")
+            import traceback
+            traceback.print_exc()
+            raise HTTPException(status_code=503, detail=f"KimiEngine not fully initialized. Repair attempt failed: {e}")
 
     if request.stream:
         raise HTTPException(status_code=400, detail="Streaming responses are not supported in this version.")
@@ -660,14 +681,17 @@ async def create_cot_chat_completion(request: ChatCompletionRequest):
     
     # 处理与常规聊天相同，但添加CoT提示词
     try:
+        logger.info("重置引擎状态用于CoT处理...")
         engine.reset()
-        logger.info("Engine reset successfully for CoT")
+        logger.info("引擎重置成功")
     except Exception as e:
-        logger.error(f"Error resetting engine for CoT: {e}")
+        logger.error(f"重置引擎时出错: {e}")
         import traceback
         traceback.print_exc()
+        # 检查重置后的引擎状态
+        logger.info(f"重置后引擎状态: engine={engine is not None}, llm_interface={engine.llm_interface is not None if engine else 'N/A'}")
         if engine is None or engine.llm_interface is None:
-            raise HTTPException(status_code=503, detail="Failed to reset KimiEngine. Try again later.")
+            raise HTTPException(status_code=503, detail=f"Failed to reset KimiEngine: {e}. Try again later.")
     
     # CoT系统提示词
     cot_system_prompt = """

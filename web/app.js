@@ -360,133 +360,148 @@ const App = {
         };
 
         const sendMessage = async () => {
-            // This function now assumes chatStarted is true
-            if (isLoading.value || userInput.value.trim() === '') return;
-
-            let messageContent = userInput.value.trim();
+            if (userInput.value.trim() === '') return;
             
-            // 使用插件系统的beforeSendMessage钩子处理消息
-            if (window.pluginSystem) {
-                try {
-                    const processed = await window.pluginSystem.triggerHook('beforeSendMessage', messageContent);
-                    if (processed !== undefined) {
-                        messageContent = processed;
-                    }
-                } catch (e) {
-                    console.error('插件处理消息时出错:', e);
-                }
+            // 添加用户消息到历史
+            const userMessage = userInput.value.trim();
+            
+            // 生成唯一ID
+            const messageId = Date.now();
+            
+            // 如果是第一条消息，将chatStarted设为true
+            if (!chatStarted.value) {
+                chatStarted.value = true;
+                await nextTick();
             }
             
+            // 将用户消息添加到历史
+            history.value.push({
+                id: messageId,
+                role: 'user',
+                content: userMessage
+            });
+            
+            // 清空输入框
+            userInput.value = '';
+            
+            // 重置滚动位置
+            scrollToBottom();
+            
+            // 设置加载状态
             isLoading.value = true;
-            userInput.value = ''; // Clear input
-
-            // Add user message to history
-            const userMessage = { id: Date.now(), role: 'user', content: messageContent };
-            history.value.push(userMessage);
-            scrollToBottom(); 
-
-            // 如果启用了网络搜索，先执行搜索
-            if (useWebSearch.value) {
-                await performWebSearch();
-            }
-
+            
             try {
-                // Prepare messages for API (include system messages if any were ingested via API)
-                // Note: The current API server resets on each call, so history building here is
-                // mostly for the *next* call if the server state were preserved.
-                const messagesForApi = history.value.map(msg => ({ role: msg.role, content: msg.content }));
+                // 构建请求体
+                const requestBody = {
+                    model: "openkimi", // 任意值，服务器会使用配置的模型
+                    messages: [],
+                    temperature: 0.7,
+                    max_tokens: 1500,
+                    stream: false
+                };
                 
-                console.log("Sending messages to API:", JSON.stringify(messagesForApi));
+                // 添加历史消息
+                history.value.forEach(msg => {
+                    requestBody.messages.push({
+                        role: msg.role,
+                        content: msg.content
+                    });
+                });
                 
-                // 添加重试逻辑
-                let retries = 3;
-                let response = null;
+                // 如果有搜索结果，格式化添加到系统消息
+                if (useWebSearch.value && searchResults.value.length > 0) {
+                    const searchContext = formatSearchResults(searchResults.value);
+                    requestBody.messages.unshift({
+                        role: "system",
+                        content: `网络搜索结果:\n${searchContext}`
+                    });
+                }
                 
-                // 决定使用哪个API端点
-                const apiEndpoint = useCoT.value ? 
+                // 确定API端点
+                const endpoint = useCoT.value ? 
                     `${apiUrl.value}/v1/chat/completions/cot` : 
                     `${apiUrl.value}/v1/chat/completions`;
                 
-                while (retries > 0) {
-                    try {
-                        response = await fetch(apiEndpoint, {
+                console.log(`使用端点: ${endpoint}`);
+                console.log("发送请求:", JSON.stringify(requestBody));
+                
+                let response;
+                try {
+                    response = await fetch(endpoint, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify(requestBody)
+                    });
+                    
+                    // 处理CoT端点错误并尝试回退到普通端点
+                    if (!response.ok && useCoT.value) {
+                        console.error(`CoT端点返回错误: ${response.status}`);
+                        
+                        // 显示CoT错误消息
+                        const errorData = await response.json().catch(() => ({ detail: "未知错误" }));
+                        console.error("CoT错误详情:", errorData);
+                        
+                        // 向用户显示错误通知
+                        history.value.push({
+                            id: Date.now(),
+                            role: 'system',
+                            content: `步骤思考模式(CoT)暂时不可用: ${errorData.detail || "服务器错误"}。正在尝试使用标准对话模式...`
+                        });
+                        
+                        scrollToBottom();
+                        
+                        // 尝试使用普通的chat端点
+                        console.log("回退到普通的chat端点");
+                        response = await fetch(`${apiUrl.value}/v1/chat/completions`, {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json',
                             },
-                            body: JSON.stringify({
-                                model: 'openkimi-model', 
-                                messages: messagesForApi,
-                            }),
+                            body: JSON.stringify(requestBody)
                         });
-                        
-                        // 如果响应成功，跳出循环
-                        if (response.ok) {
-                            break;
-                        }
-                        
-                        // 如果是503错误（服务器初始化问题），等待一会再重试
-                        if (response.status === 503) {
-                            console.log(`服务器报告503错误，剩余重试次数: ${retries-1}`);
-                            await new Promise(resolve => setTimeout(resolve, 1000)); // 等待1秒
-                            retries--;
-                        } else {
-                            // 其他错误直接跳出循环
-                            break;
-                        }
-                    } catch (fetchError) {
-                        console.error("Fetch error:", fetchError);
-                        retries--;
-                        if (retries > 0) {
-                            console.log(`网络错误，剩余重试次数: ${retries}`);
-                            await new Promise(resolve => setTimeout(resolve, 1000)); // 等待1秒
-                        }
                     }
+                    
+                    if (!response.ok) {
+                        const errorData = await response.json().catch(() => ({ detail: "未知错误" }));
+                        throw new Error(`API错误: ${errorData.detail || response.statusText}`);
+                    }
+                } catch (fetchError) {
+                    console.error("请求错误:", fetchError);
+                    throw fetchError;
                 }
                 
-                if (!response || !response.ok) {
-                    const errorData = await response?.json().catch(() => ({ detail: '无法解析错误响应' }));
-                    throw new Error(`API Error (${response?.status}): ${errorData.detail || response?.statusText || "无法连接到服务器"}`);
-                }
-
+                // 解析响应
                 const data = await response.json();
-                console.log("Received data from API:", data);
+                console.log("接收到的响应:", data);
                 
-                if (data.choices && data.choices.length > 0 && data.choices[0].message) {
-                    let responseContent = data.choices[0].message.content.trim();
-                    
-                    // 使用插件系统的afterReceiveMessage钩子处理响应
-                    if (window.pluginSystem) {
-                        try {
-                            const processed = await window.pluginSystem.triggerHook('afterReceiveMessage', responseContent);
-                            if (processed !== undefined) {
-                                responseContent = processed;
-                            }
-                        } catch (e) {
-                            console.error('插件处理响应时出错:', e);
-                        }
-                    }
-                    
-                    const assistantMessage = { 
-                        id: Date.now() + 1, 
-                        role: 'assistant', 
-                        content: responseContent
-                    };
-                    history.value.push(assistantMessage);
-                } else {
-                    throw new Error('API 响应格式无效');
-                }
-
-            } catch (error) {
-                console.error('Send Message Error:', error);
+                // 添加助手消息
                 history.value.push({
-                    id: Date.now() + 1,
+                    id: Date.now(),
                     role: 'assistant',
+                    content: data.choices[0].message.content
+                });
+                
+                // 重置搜索结果
+                searchResults.value = [];
+                isSearching.value = false;
+                
+                // 重置滚动位置
+                scrollToBottom();
+            } catch (error) {
+                console.error('Error:', error);
+                
+                // 添加错误消息
+                history.value.push({
+                    id: Date.now(),
+                    role: 'system',
                     content: `发生错误: ${error.message}`
                 });
+                
+                scrollToBottom();
             } finally {
                 isLoading.value = false;
-                scrollToBottom(); 
             }
         };
 

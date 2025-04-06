@@ -67,6 +67,21 @@ class FrameworkGenerator:
         solution = self.llm_interface.generate(prompt)
         return solution
         
+    def generate_solution(self, query: str, framework: str, useful_context: str = "", rag_context: List[str] = None) -> str:
+        """
+        生成解决方案（直接方式，不使用MCP）
+        
+        Args:
+            query: 用户的问题
+            framework: 解决问题的框架
+            useful_context: 主要上下文
+            rag_context: 从RAG检索的上下文列表
+            
+        Returns:
+            生成的解决方案
+        """
+        return self._generate_single_solution(query, framework, useful_context, rag_context)
+        
     def generate_solution_mcp(self, query: str, framework: str, useful_context: str = "", rag_context: List[str] = None, num_candidates: int = 3) -> str:
         """
         使用 MCP 生成解决方案
