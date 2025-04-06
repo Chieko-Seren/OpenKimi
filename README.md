@@ -128,13 +128,15 @@ useful, less_useful = processor.classify_by_entropy(batches, threshold=3.0)
 ### RAG 管理 (向量检索)
 - **存储**: 低信息熵文本块通过 LLM 进行摘要，摘要和原文一同存储。摘要文本被转换为向量（使用 `sentence-transformers`）并索引。
 - **检索**: 当需要额外上下文时，用户查询被转换为向量，通过计算与存储的摘要向量之间的余弦相似度来检索最相关的原文块 (`top_k`)。
+- **高效向量检索**: 使用FAISS（Facebook AI相似性搜索）进行高效向量索引和检索，显著提升大规模向量集合的检索速度。
 
 ```python
 from openkimi.core import RAGManager
 from openkimi.utils.llm_interface import get_llm_interface
 
 llm = get_llm_interface({"type": "dummy"})
-rag = RAGManager(llm, embedding_model_name='all-MiniLM-L6-v2')
+# 启用FAISS加速向量检索
+rag = RAGManager(llm, embedding_model_name='all-MiniLM-L6-v2', use_faiss=True) 
 summaries = rag.batch_store(less_useful_texts)
 relevant_texts = rag.retrieve("相关查询", top_k=3)
 ```
@@ -253,14 +255,14 @@ curl http://localhost:8000/v1/chat/completions \
 
 - [ ] **优化 API 状态管理**: 支持多轮对话状态保持。
 - [ ] **流式 API 响应**: 实现 `stream=True` 支持。
-- [ ] **更智能的 RAG**: 集成向量数据库 (e.g., ChromaDB, FAISS)，支持更高级检索策略。
+- [x] **更智能的 RAG**: 集成向量数据库 (FAISS)，支持更高效的向量检索。
 - [ ] **更精确的 Token 计算**: 使用 `tiktoken` 或特定模型的精确 tokenizer。
 - [ ] **完善 MCP 策略**: 探索不同的上下文采样和候选方案合成方法。
 - [ ] **支持量化和 Accelerate**: 优化本地模型加载和推理速度/显存。
 - [ ] **完善递归 RAG 内部调用**: 确保所有 LLM 调用点都检查上下文长度。
 - [ ] **更全面的测试**: 增加单元测试和集成测试覆盖率。
 - [x] 添加更多 LLM 后端支持 (`transformers`, OpenAI API)
-- [x] 实现向量数据库集成，提升 RAG 性能 (Basic Sentence Transformers + Cosine Sim)
+- [x] 实现向量数据库集成，提升 RAG 性能 (FAISS + Sentence Transformers)
 - [ ] 添加更细粒度的信息熵评估方式
 - [ ] 支持多模态输入
 - [ ] 增强跨文档推理能力

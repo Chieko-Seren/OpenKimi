@@ -73,7 +73,11 @@ class KimiEngine:
             
             try:
                 logger.info(f"初始化RAGManager，配置: {rag_cfg}")
-                self.rag_manager = RAGManager(self.llm_interface, embedding_model_name=rag_cfg.get('embedding_model', 'all-MiniLM-L6-v2'))
+                self.rag_manager = RAGManager(
+                    self.llm_interface, 
+                    embedding_model_name=rag_cfg.get('embedding_model', 'all-MiniLM-L6-v2'),
+                    use_faiss=rag_cfg.get('use_faiss', True)
+                )
             except Exception as rag_error:
                 logger.error(f"初始化RAGManager时出错: {rag_error}")
                 import traceback
@@ -96,7 +100,7 @@ class KimiEngine:
         default_config = {
             "llm": {"type": "dummy"},
             "processor": {"batch_size": 512, "entropy_threshold": 3.0},
-            "rag": {"embedding_model": "all-MiniLM-L6-v2", "top_k": 3},
+            "rag": {"embedding_model": "all-MiniLM-L6-v2", "top_k": 3, "use_faiss": True},
             "mcp_candidates": 1 # Default to no MCP
         }
         
@@ -140,7 +144,12 @@ class KimiEngine:
 
         logger.info(f"Text exceeds limit ({current_tokens} > {target_token_limit}). Compressing...")
         # Use a temporary RAG store for this compression cycle
-        temp_rag = RAGManager(self.llm_interface, embedding_model_name=self.config.get('rag', {}).get('embedding_model', 'all-MiniLM-L6-v2'))
+        rag_cfg = self.config.get('rag', {})
+        temp_rag = RAGManager(
+            self.llm_interface, 
+            embedding_model_name=rag_cfg.get('embedding_model', 'all-MiniLM-L6-v2'),
+            use_faiss=rag_cfg.get('use_faiss', True)
+        )
         
         # Split, classify, and store less useful parts
         batches = self.processor.split_into_batches(text)
@@ -294,7 +303,11 @@ class KimiEngine:
         if self.llm_interface is not None:
             try:
                 logger.info(f"重新初始化RAGManager，配置: {rag_cfg}")
-                self.rag_manager = RAGManager(self.llm_interface, embedding_model_name=rag_cfg.get('embedding_model', 'all-MiniLM-L6-v2'))
+                self.rag_manager = RAGManager(
+                    self.llm_interface, 
+                    embedding_model_name=rag_cfg.get('embedding_model', 'all-MiniLM-L6-v2'),
+                    use_faiss=rag_cfg.get('use_faiss', True)
+                )
                 logger.info("RAGManager重置成功")
             except Exception as e:
                 logger.error(f"重置RAGManager时出错: {e}")
@@ -311,7 +324,11 @@ class KimiEngine:
                 if self.llm_interface is not None:
                     logger.info("LLM接口重新初始化成功")
                     try:
-                        self.rag_manager = RAGManager(self.llm_interface, embedding_model_name=rag_cfg.get('embedding_model', 'all-MiniLM-L6-v2'))
+                        self.rag_manager = RAGManager(
+                            self.llm_interface, 
+                            embedding_model_name=rag_cfg.get('embedding_model', 'all-MiniLM-L6-v2'),
+                            use_faiss=rag_cfg.get('use_faiss', True)
+                        )
                         logger.info("RAGManager重置成功")
                     except Exception as e:
                         logger.error(f"重置RAGManager时出错: {e}")

@@ -10,5 +10,7 @@ python-docx>=0.8.11
 PyPDF2>=3.0.0
 python-multipart>=0.0.6
 python-dotenv>=1.0.0
+faiss-cpu>=1.7.0  # 添加FAISS CPU版本用于高效向量检索
+# 如果有GPU支持，可以使用：faiss-gpu
 # accelerate>=0.20.0 # Optional, for faster loading/inference
 # bitsandbytes>=0.40.0 # Optional, for 8-bit/4-bit quantization 
