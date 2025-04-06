@@ -13,7 +13,7 @@ _让LLM突破上下文长度限制的宇宙飞船_
   <img src="https://i.postimg.cc/6qdQbvPf/open-kimi.png">
 </div>
 
-[在线 Demo](https://chieko-seren.github.io/OpenKimi/) | [QQ 群组](https://qm.qq.com/q/65zMQ7fMrY) | [查看开发文档](https://github.com/Chieko-Seren/OpenKimi/blob/main/docs/index.md)
+[在线 Demo](https://chieko-seren.github.io/OpenKimi/) | [QQ 群组](https://qm.qq.com/q/65zMQ7fMrY) | [查看开发文档](https://github.com/Chieko-Seren/OpenKimi/blob/main/docs/index.md) | [报告安全漏洞](https://github.com/Chieko-Seren/OpenKimi/security)
 
 ## 🌟 项目介绍
 OpenKimi 是首个面向开发者的**无限上下文LLM支持框架**，旨在打破传统大语言模型（LLM）的上下文长度限制。通过革命性的上下文管理算法和高效的内存优化技术，OpenKimi 为开发者提供了一个强大的工具，让模型能够处理超大规模文本数据并进行深度语义推理。我们实现了：
