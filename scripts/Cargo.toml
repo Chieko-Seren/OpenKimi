@@ -1,0 +1,12 @@
+[package]
+name = "openkimi-build-tools"
+version = "0.1.0"
+edition = "2021"
+description = "OpenKimi客户端构建工具"
+
+[[bin]]
+name = "build-client"
+path = "build-client.rs"
+
+[dependencies]
+glob = "0.3.1" 
