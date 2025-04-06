@@ -5,13 +5,17 @@ import argparse
 import sys
 import logging
 import shutil
-from typing import Optional, List
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Depends, BackgroundTasks
+from typing import Optional, List, Any, Dict, Literal, Union
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Depends, BackgroundTasks, status
 from fastapi.responses import StreamingResponse, JSONResponse # Add JSONResponse
 from fastapi.middleware.cors import CORSMiddleware  # 导入CORS中间件
 import uvicorn
 import requests # Import requests
 import json # Import json
+from sqlalchemy.orm import Session
+from sqlalchemy import text
+from pathlib import Path
+from tempfile import SpooledTemporaryFile
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -22,7 +26,13 @@ sys.path.insert(0, project_root)
 
 from openkimi import KimiEngine
 from openkimi.utils.llm_interface import get_llm_interface
-from openkimi.api.models import ChatCompletionRequest, ChatCompletionResponse, ChatMessage, ChatCompletionChoice, CompletionUsage
+from openkimi.api.models import (
+    ChatCompletionRequest, ChatCompletionResponse, ChatMessage, ChatCompletionChoice, 
+    CompletionUsage, UserCreate, UserUpdate, UserResponse, APIKeyCreate, APIKeyResponse,
+    UsageStatistics, DateRangeRequest, ErrorResponse
+)
+from openkimi.api.database import get_db, create_tables, create_api_key, get_all_api_keys, revoke_api_key, record_api_usage, get_user_usage, User, APIKey, UsageRecord
+from openkimi.api.auth import get_api_key, get_admin_user, create_user, authenticate_user, create_default_admin, user_to_response, apikey_to_response, hash_password
 
 app = FastAPI(
     title="OpenKimi API",
@@ -50,6 +60,21 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # 存储已上传文件的信息
 uploaded_files = {}
+
+# 应用启动事件：初始化数据库
+@app.on_event("startup")
+async def startup_db_client():
+    try:
+        # 创建数据库表
+        create_tables()
+        # 创建默认管理员用户
+        db = next(get_db())
+        create_default_admin(db)
+        logger.info("数据库和默认管理员用户初始化成功")
+    except Exception as e:
+        logger.error(f"数据库初始化失败: {e}")
+        import traceback
+        traceback.print_exc()
 
 def initialize_engine(args):
     """Initializes the global KimiEngine based on args."""
@@ -136,7 +161,11 @@ def initialize_engine(args):
           response_model=ChatCompletionResponse, 
           summary="OpenAI Compatible Chat Completion",
           tags=["Chat"])
-def create_chat_completion(request: ChatCompletionRequest):
+def create_chat_completion(
+    request: ChatCompletionRequest,
+    api_key: Any = Depends(get_api_key),
+    db: Session = Depends(get_db)
+):
     """
     Handles chat completion requests in an OpenAI-compatible format.
 
@@ -196,6 +225,22 @@ def create_chat_completion(request: ChatCompletionRequest):
     try:
         print(f"Running chat for user message: {last_user_message[:50]}...")
         completion_text = engine.chat(last_user_message)
+        
+        # 记录API使用情况
+        prompt_tokens = engine.token_counter.count_tokens(last_user_message)
+        completion_tokens = engine.token_counter.count_tokens(completion_text)
+        try:
+            record_api_usage(
+                db=db, 
+                user_id=api_key.user_id, 
+                api_key_id=api_key.id, 
+                endpoint="/v1/chat/completions", 
+                prompt_tokens=prompt_tokens, 
+                completion_tokens=completion_tokens
+            )
+        except Exception as usage_error:
+            logger.error(f"记录API使用情况失败: {usage_error}")
+            
     except Exception as e:
         print(f"Error during engine.chat: {e}")
         # Log the full traceback
@@ -795,4 +840,195 @@ def cli():
 
 if __name__ == "__main__":
     # This allows running the server directly using `python -m openkimi.api.server`
-    cli() 
+    cli()
+
+# ================ 用户管理路由 ================
+
+@app.post("/api/users", 
+         response_model=UserResponse, 
+         status_code=status.HTTP_201_CREATED,
+         summary="创建新用户",
+         tags=["用户管理"])
+async def create_new_user(
+    user: UserCreate,
+    admin: Any = Depends(get_admin_user),
+    db: Session = Depends(get_db)
+):
+    """创建新用户（需要管理员权限）"""
+    try:
+        db_user = create_user(db, user)
+        return user_to_response(db_user)
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logger.error(f"创建用户失败: {e}")
+        raise HTTPException(status_code=500, detail=f"创建用户失败: {str(e)}")
+
+@app.get("/api/users/me", 
+        response_model=UserResponse,
+        summary="获取当前用户信息",
+        tags=["用户管理"])
+async def get_current_user(
+    api_key: Any = Depends(get_api_key),
+    db: Session = Depends(get_db)
+):
+    """获取当前API密钥关联的用户信息"""
+    user = db.query(User).filter(User.id == api_key.user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    return user_to_response(user)
+
+@app.get("/api/users", 
+        response_model=List[UserResponse],
+        summary="获取所有用户",
+        tags=["用户管理"])
+async def get_all_users(
+    admin: Any = Depends(get_admin_user),
+    db: Session = Depends(get_db)
+):
+    """获取所有用户（需要管理员权限）"""
+    users = db.query(User).all()
+    return [user_to_response(user) for user in users]
+
+@app.put("/api/users/{user_id}", 
+        response_model=UserResponse,
+        summary="更新用户信息",
+        tags=["用户管理"])
+async def update_user(
+    user_id: int,
+    user_update: UserUpdate,
+    admin: Any = Depends(get_admin_user),
+    db: Session = Depends(get_db)
+):
+    """更新用户信息（需要管理员权限）"""
+    db_user = db.query(User).filter(User.id == user_id).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    
+    # 更新用户字段
+    if user_update.username is not None:
+        # 检查用户名是否已存在
+        existing = db.query(User).filter(User.username == user_update.username).first()
+        if existing and existing.id != user_id:
+            raise HTTPException(status_code=400, detail="用户名已存在")
+        db_user.username = user_update.username
+    
+    if user_update.email is not None:
+        # 检查邮箱是否已存在
+        existing = db.query(User).filter(User.email == user_update.email).first()
+        if existing and existing.id != user_id:
+            raise HTTPException(status_code=400, detail="邮箱已存在")
+        db_user.email = user_update.email
+    
+    if user_update.password is not None:
+        db_user.hashed_password = hash_password(user_update.password)
+    
+    if user_update.is_active is not None:
+        db_user.is_active = user_update.is_active
+    
+    if user_update.is_admin is not None:
+        db_user.is_admin = user_update.is_admin
+    
+    db.commit()
+    db.refresh(db_user)
+    return user_to_response(db_user)
+
+# ================ API密钥管理路由 ================
+
+@app.post("/api/keys", 
+         response_model=APIKeyResponse, 
+         status_code=status.HTTP_201_CREATED,
+         summary="创建API密钥",
+         tags=["API密钥"])
+async def create_new_api_key(
+    key_data: APIKeyCreate,
+    api_key: Any = Depends(get_api_key),
+    db: Session = Depends(get_db)
+):
+    """为当前用户创建新的API密钥"""
+    try:
+        new_key = create_api_key(
+            db=db, 
+            name=key_data.name, 
+            user_id=api_key.user_id,
+            description=key_data.description,
+            expires_at=key_data.expires_at
+        )
+        return apikey_to_response(new_key)
+    except Exception as e:
+        logger.error(f"创建API密钥失败: {e}")
+        raise HTTPException(status_code=500, detail=f"创建API密钥失败: {str(e)}")
+
+@app.get("/api/keys", 
+        response_model=List[APIKeyResponse],
+        summary="获取当前用户的API密钥",
+        tags=["API密钥"])
+async def get_user_api_keys(
+    api_key: Any = Depends(get_api_key),
+    db: Session = Depends(get_db)
+):
+    """获取当前用户的所有API密钥"""
+    keys = get_all_api_keys(db, api_key.user_id)
+    return [apikey_to_response(key) for key in keys]
+
+@app.delete("/api/keys/{key_id}", 
+          status_code=status.HTTP_204_NO_CONTENT,
+          summary="撤销API密钥",
+          tags=["API密钥"])
+async def delete_api_key(
+    key_id: int,
+    api_key: Any = Depends(get_api_key),
+    db: Session = Depends(get_db)
+):
+    """撤销指定的API密钥（只能撤销自己的密钥）"""
+    # 不允许撤销当前使用的密钥
+    if api_key.id == key_id:
+        raise HTTPException(status_code=400, detail="不能撤销当前正在使用的API密钥")
+    
+    success = revoke_api_key(db, key_id, api_key.user_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="API密钥不存在或不属于当前用户")
+    return None
+
+# ================ 使用统计路由 ================
+
+@app.post("/api/usage", 
+         response_model=UsageStatistics,
+         summary="获取API使用统计",
+         tags=["统计"])
+async def get_api_usage(
+    date_range: DateRangeRequest,
+    api_key: Any = Depends(get_api_key),
+    db: Session = Depends(get_db)
+):
+    """获取当前用户的API使用统计"""
+    usage = get_user_usage(db, api_key.user_id, date_range.start_date, date_range.end_date)
+    return UsageStatistics(**usage)
+
+@app.get("/api/health", 
+        summary="API健康检查",
+        tags=["系统"])
+async def api_health_check(
+    db: Session = Depends(get_db)
+):
+    """API服务健康检查，不需要API密钥"""
+    try:
+        # 尝试数据库连接
+        db.execute(text("SELECT 1")).first()
+        # 检查Kimi引擎状态
+        engine_status = "ok" if engine is not None and engine.llm_interface is not None else "error"
+        
+        return {
+            "status": "ok",
+            "database": "ok",
+            "engine": engine_status,
+            "version": app.version
+        }
+    except Exception as e:
+        logger.error(f"健康检查失败: {e}")
+        return {
+            "status": "error",
+            "database": "error",
+            "engine": "unknown",
+            "error": str(e)
+        } 

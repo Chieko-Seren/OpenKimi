@@ -1,5 +1,6 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, EmailStr
 from typing import List, Dict, Optional, Union
+from datetime import datetime
 
 # Based on OpenAI Chat Completion API
 
@@ -47,4 +48,66 @@ class ChatCompletionChunk(BaseModel):
     object: str = "chat.completion.chunk"
     created: int
     model: str
-    choices: List[ChatCompletionChunkChoice] 
+    choices: List[ChatCompletionChunkChoice]
+
+# ============= 用户和认证相关模型 =============
+
+class UserBase(BaseModel):
+    username: str = Field(..., min_length=3, max_length=50)
+    email: EmailStr = Field(...)
+
+class UserCreate(UserBase):
+    password: str = Field(..., min_length=6)
+    is_admin: Optional[bool] = False
+
+class UserUpdate(BaseModel):
+    username: Optional[str] = Field(None, min_length=3, max_length=50)
+    email: Optional[EmailStr] = None
+    password: Optional[str] = Field(None, min_length=6)
+    is_active: Optional[bool] = None
+    is_admin: Optional[bool] = None
+
+class UserResponse(UserBase):
+    id: int
+    is_active: bool
+    is_admin: bool
+    created_at: datetime
+    
+    class Config:
+        orm_mode = True
+
+# ============= API密钥相关模型 =============
+
+class APIKeyBase(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    description: Optional[str] = None
+
+class APIKeyCreate(APIKeyBase):
+    expires_at: Optional[datetime] = None
+
+class APIKeyResponse(APIKeyBase):
+    id: int
+    key: str
+    created_at: datetime
+    expires_at: Optional[datetime] = None
+    is_active: bool
+    last_used_at: Optional[datetime] = None
+    
+    class Config:
+        orm_mode = True
+
+# ============= 使用统计相关模型 =============
+
+class UsageStatistics(BaseModel):
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+
+class DateRangeRequest(BaseModel):
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
+
+# ============= 错误响应模型 =============
+
+class ErrorResponse(BaseModel):
+    detail: str 
