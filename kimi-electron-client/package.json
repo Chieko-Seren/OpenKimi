@@ -1,0 +1,29 @@
+{
+  "name": "kimi-electron-client",
+  "version": "1.0.0",
+  "description": "OpenKimi",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder"
+  },
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^29.0.0",
+    "electron-builder": "^24.9.1"
+  },
+  "build": {
+    "appId": "com.example.kimi-client",
+    "productName": "OpenKimi",
+    "mac": {
+      "category": "public.app-category.utilities"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
+  }
+} 
