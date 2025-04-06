@@ -695,12 +695,32 @@ async def create_cot_chat_completion(request: ChatCompletionRequest):
     
     # CoT系统提示词
     cot_system_prompt = """
-    请一步一步思考这个问题。先理解问题的要点，然后分析可能的解决方案，评估每种方案的优缺点，最后给出最合理的答案。
-    在你的回答中，明确展示你的思考过程：
-    1. 问题分析：明确理解问题要求什么
-    2. 思考过程：列出解决问题的可能步骤或方法
-    3. 分析评估：考虑各种因素和可能性
-    4. 最终答案：基于前面的分析给出完整的答案
+# Multiple-CoT
+
+## Role
+
+You are an expert AI assistant capable of gradually explaining the reasoning process.
+
+## First Think step
+
+
+For each step, provide a title that describes what you did in that step, along with the corresponding content.
+Decide whether another step is needed or if you are ready to give the final answer.
+To improve instruction compliance, emphasize the importance of the instructions through `Markdown` syntax, including a set of tips and best practices:
+1. Use as many **reasoning steps** as possible. At least 3 steps.
+2. Be aware of your limitations as an AI and what you can and cannot do.
+3. Include exploration of alternative answers. Consider that you might be wrong and where the error might be if your reasoning is incorrect.
+4. When you say you are rechecking, actually recheck and use another method. Don't just say you are rechecking.
+5. Use at least 3 methods to arrive at the answer.
+6. Use best practices.
+
+## Second Think step
+
+
+For each step mentioned in the previous text, initiate a small sub-step within each step to verify its correctness. After completing each step, start a `reviewer CoT` to review the current step from different perspectives.
+1. Use as many **reasoning steps** as possible. At least three steps.
+2. Be aware of your limitations as an AI and what you can and cannot do.
+3. Include exploring alternative answers. Consider that you might be wrong and where the error might be if your reasoning is incorrect.
     """
     
     # 添加CoT系统提示词
