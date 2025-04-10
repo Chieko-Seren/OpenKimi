@@ -20,7 +20,8 @@ class KimiEngine:
                  llm_config: Optional[Dict] = None,
                  processor_config: Optional[Dict] = None,
                  rag_config: Optional[Dict] = None,
-                 mcp_candidates: int = 1 # Default to 1 (no MCP) for simplicity
+                 mcp_candidates: int = 1, # Default to 1 (no MCP) for simplicity
+                 session_id: Optional[str] = None # 添加会话ID支持
                  ):
         """
         初始化Kimi引擎
@@ -31,6 +32,7 @@ class KimiEngine:
             processor_config: 文本处理器配置字典 (覆盖配置文件)
             rag_config: RAG 配置字典 (覆盖配置文件)
             mcp_candidates: MCP候选方案数量 (1表示禁用MCP)
+            session_id: 会话ID，用于标识会话
         """
         # 加载配置
         self.config = self._load_config(config_path)
@@ -41,8 +43,11 @@ class KimiEngine:
         if rag_config: self.config['rag'] = {**self.config.get('rag', {}), **rag_config}
         
         self.mcp_candidates = mcp_candidates
+        self.session_id = session_id
         logger.info(f"Initializing KimiEngine with config: {self.config}")
         logger.info(f"MCP candidates: {self.mcp_candidates}")
+        if session_id:
+            logger.info(f"Session ID: {session_id}")
                 
         # 初始化LLM接口和 Tokenizer
         try:
@@ -295,7 +300,7 @@ class KimiEngine:
     
     def reset(self) -> None:
         """重置会话历史和 RAG 存储"""
-        logger.info("Resetting KimiEngine state.")
+        logger.info(f"Resetting KimiEngine state. Session ID: {self.session_id}")
         self.conversation_history = []
         # Reset RAG manager as well (clears stored summaries and vectors)
         rag_cfg = self.config.get('rag', {})
@@ -342,4 +347,13 @@ class KimiEngine:
                 logger.critical(f"重新初始化LLM接口时出错: {e}")
                 import traceback
                 traceback.print_exc()
-                raise RuntimeError(f"LLM接口重新初始化失败: {e}") 
+                raise RuntimeError(f"LLM接口重新初始化失败: {e}")
+                
+    def get_session_id(self) -> Optional[str]:
+        """获取会话ID"""
+        return self.session_id
+        
+    def set_session_id(self, session_id: str) -> None:
+        """设置会话ID"""
+        self.session_id = session_id
+        logger.info(f"设置会话ID: {session_id}") 

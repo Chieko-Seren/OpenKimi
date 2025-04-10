@@ -15,6 +15,7 @@ class ChatCompletionRequest(BaseModel):
     max_tokens: Optional[int] = 512
     # Add other common OpenAI params if needed (top_p, frequency_penalty, etc.)
     stream: Optional[bool] = False # Streaming not implemented in this version
+    session_id: Optional[str] = Field(None, description="会话ID，用于保持会话状态")
 
 class ChoiceDelta(BaseModel):
     content: Optional[str] = None
@@ -37,6 +38,7 @@ class ChatCompletionResponse(BaseModel):
     model: str = Field(..., description="The model used for the completion")
     choices: List[ChatCompletionChoice]
     usage: Optional[CompletionUsage] = None # Placeholder
+    session_id: Optional[str] = Field(None, description="会话ID，用于保持会话状态")
 
 class ChatCompletionChunkChoice(BaseModel):
     index: int = 0
@@ -111,3 +113,11 @@ class DateRangeRequest(BaseModel):
 
 class ErrorResponse(BaseModel):
     detail: str 
+
+# ============= 会话管理相关模型 =============
+
+class SessionResponse(BaseModel):
+    session_id: str = Field(..., description="会话ID")
+    created_at: int = Field(..., description="创建时间戳")
+    last_accessed: int = Field(..., description="最后访问时间戳")
+    expires_at: int = Field(..., description="过期时间戳") 

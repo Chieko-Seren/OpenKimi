@@ -29,10 +29,11 @@ from openkimi.utils.llm_interface import get_llm_interface
 from openkimi.api.models import (
     ChatCompletionRequest, ChatCompletionResponse, ChatMessage, ChatCompletionChoice, 
     CompletionUsage, UserCreate, UserUpdate, UserResponse, APIKeyCreate, APIKeyResponse,
-    UsageStatistics, DateRangeRequest, ErrorResponse
+    UsageStatistics, DateRangeRequest, ErrorResponse, SessionResponse
 )
 from openkimi.api.database import get_db, create_tables, create_api_key, get_all_api_keys, revoke_api_key, record_api_usage, get_user_usage, User, APIKey, UsageRecord
 from openkimi.api.auth import get_api_key, get_admin_user, create_user, authenticate_user, create_default_admin, user_to_response, apikey_to_response, hash_password
+from openkimi.api.session_manager import SessionManager
 
 app = FastAPI(
     title="OpenKimi API",
@@ -53,6 +54,9 @@ app.add_middleware(
 # This is simple; for production, consider dependency injection frameworks
 engine: Optional[KimiEngine] = None
 engine_model_name: str = "openkimi-engine"
+
+# 会话状态管理器
+session_manager: Optional[SessionManager] = None
 
 # 文件上传存储目录
 UPLOAD_DIR = os.path.join(project_root, "uploads")
@@ -78,7 +82,7 @@ async def startup_db_client():
 
 def initialize_engine(args):
     """Initializes the global KimiEngine based on args."""
-    global engine, engine_model_name
+    global engine, engine_model_name, session_manager
     print("Initializing Kimi Engine for API server...")
     
     if not args.config or not os.path.exists(args.config):
@@ -98,63 +102,28 @@ def initialize_engine(args):
             print(f"JSON解析成功: {json_config}")
         except json.JSONDecodeError as e:
             print(f"JSON解析失败: {e}")
-            
-        # 检查transformers库是否正确安装 (DummyLLM需要)
-        try:
-            import transformers
-            print(f"Transformers库版本: {transformers.__version__}")
-        except ImportError:
-            print("错误: Transformers库未安装或无法导入")
-            print("请运行: pip install transformers")
             engine = None
             return
             
-        # 检查sentence-transformers库是否正确安装 (RAG需要)
-        try:
-            import sentence_transformers
-            print(f"Sentence-Transformers库版本: {sentence_transformers.__version__}")
-        except ImportError:
-            print("错误: sentence-transformers库未安装或无法导入")
-            print("请运行: pip install sentence-transformers")
-            engine = None
-            return
-                
-        print("开始初始化KimiEngine实例...")
-        engine = KimiEngine(
-            config_path=args.config,
-            # You might want to load LLM/processor/RAG configs directly here too
-            # based on args if needed, e.g.:
-            # llm_config={"model_path": args.model} if args.model else None,
-            mcp_candidates=args.mcp_candidates
-        )
-        # Try to get a more descriptive model name if possible from config
-        engine_model_name = engine.config.get("llm", {}).get("model_name") or \
-                            engine.config.get("llm", {}).get("model_path") or \
-                            f"openkimi-{engine.config.get('llm', {}).get('type', 'unknown')}"
-        print(f"Kimi Engine initialized successfully. Using model identifier: {engine_model_name}")
+        # 创建引擎工厂函数
+        def engine_factory():
+            return KimiEngine(
+                config_path=args.config,
+                mcp_candidates=args.mcp_candidates if hasattr(args, 'mcp_candidates') else 1
+            )
+            
+        # 初始化会话状态管理器
+        session_manager = SessionManager(engine_factory)
+        logger.info("会话状态管理器初始化成功")
         
-        # 验证engine和llm_interface是否正确初始化
-        if engine.llm_interface is None:
-            print("WARNING: engine.llm_interface is None after initialization!")
-            # 尝试重新初始化llm_interface
-            print(f"尝试重新初始化LLM接口，配置: {engine.config['llm']}")
-            try:
-                engine.llm_interface = get_llm_interface(engine.config["llm"])
-                if engine.llm_interface is None:
-                    print("CRITICAL: Failed to recreate llm_interface!")
-                    engine = None
-            except Exception as llm_error:
-                print(f"重新初始化LLM接口失败: {llm_error}")
-                import traceback
-                traceback.print_exc()
-                engine = None
-                
+        # 创建默认引擎实例（用于向后兼容）
+        engine = engine_factory()
+        engine_model_name = "openkimi-engine"
+        logger.info("KimiEngine初始化成功")
     except Exception as e:
-        print(f"FATAL: Failed to initialize KimiEngine: {e}")
-        # Import traceback to print full stack trace
+        logger.error(f"初始化KimiEngine时出错: {e}")
         import traceback
         traceback.print_exc()
-        # For now, let the API start but endpoints will fail
         engine = None
 
 @app.post("/v1/chat/completions", 
@@ -172,38 +141,39 @@ def create_chat_completion(
     Note: Streaming is not currently supported.
     Note: `model` in request is ignored; the engine's loaded model is used.
     """
-    if engine is None:
-        raise HTTPException(status_code=503, detail="KimiEngine not initialized. Check server logs.")
+    global session_manager
     
-    if engine.llm_interface is None:
-        logger.error("KimiEngine has no LLM interface. This might be due to a reset operation.")
-        raise HTTPException(status_code=503, detail="KimiEngine not fully initialized. Try again in a moment.")
-
+    if session_manager is None:
+        raise HTTPException(status_code=503, detail="会话状态管理器未初始化。请检查服务器日志。")
+    
     if request.stream:
         raise HTTPException(status_code=400, detail="Streaming responses are not supported in this version.")
 
     request_id = f"chatcmpl-{uuid.uuid4()}"
     created_time = int(time.time())
-
-    # --- Simulate conversation history processing --- 
-    # The current KimiEngine manages history internally via ingest/chat.
-    # For a stateless API like OpenAI's, we need to reconstruct the state 
-    # or adapt KimiEngine to accept history directly.
     
-    # Simple approach for now: Reset engine, ingest system/doc prompts, then run user query.
-    # This is INEFFICIENT for multi-turn conversations via API.
-    # A better approach would modify KimiEngine to accept message history.
-    try:
-        engine.reset()
-        logger.info("Engine reset successfully")
-    except Exception as e:
-        logger.error(f"Error resetting engine: {e}")
-        import traceback
-        traceback.print_exc()
-        # 如果reset失败但engine和llm_interface仍然存在，可以继续
-        if engine is None or engine.llm_interface is None:
-            raise HTTPException(status_code=503, detail="Failed to reset KimiEngine. Try again later.")
+    # 获取或创建会话
+    session_id = request.session_id
+    if session_id:
+        # 尝试获取现有会话
+        engine = session_manager.get_session(session_id)
+        if engine is None:
+            # 会话不存在，创建新会话
+            session_id = session_manager.create_session(session_id)
+            engine = session_manager.get_session(session_id)
+    else:
+        # 创建新会话
+        session_id = session_manager.create_session()
+        engine = session_manager.get_session(session_id)
     
+    if engine is None:
+        raise HTTPException(status_code=503, detail="无法创建或获取会话。请检查服务器日志。")
+    
+    if engine.llm_interface is None:
+        logger.error("KimiEngine has no LLM interface. This might be due to a reset operation.")
+        raise HTTPException(status_code=503, detail="KimiEngine not fully initialized. Try again in a moment.")
+    
+    # 处理消息
     last_user_message = None
     for message in request.messages:
         if message.role == "system":
@@ -264,7 +234,109 @@ def create_chat_completion(
         created=created_time,
         model=engine_model_name, 
         choices=[choice],
-        usage=usage
+        usage=usage,
+        session_id=session_id
+    )
+
+# 添加会话管理API
+@app.post("/v1/sessions", 
+          response_model=SessionResponse, 
+          summary="创建新会话",
+          tags=["Sessions"])
+def create_session(
+    api_key: Any = Depends(get_api_key),
+    timeout: Optional[int] = 3600
+):
+    """
+    创建新会话
+    
+    Args:
+        api_key: API密钥
+        timeout: 会话超时时间（秒）
+        
+    Returns:
+        SessionResponse: 会话信息
+    """
+    global session_manager
+    
+    if session_manager is None:
+        raise HTTPException(status_code=503, detail="会话状态管理器未初始化。请检查服务器日志。")
+        
+    try:
+        session_id = session_manager.create_session(timeout=timeout)
+        session = session_manager.sessions[session_id]
+        
+        return SessionResponse(
+            session_id=session_id,
+            created_at=int(session["created_at"]),
+            last_accessed=int(session["last_accessed"]),
+            expires_at=int(session_manager.session_timeouts[session_id])
+        )
+    except Exception as e:
+        logger.error(f"创建会话失败: {e}")
+        raise HTTPException(status_code=500, detail=f"创建会话失败: {e}")
+
+@app.delete("/v1/sessions/{session_id}", 
+           status_code=status.HTTP_204_NO_CONTENT,
+           summary="删除会话",
+           tags=["Sessions"])
+def delete_session(
+    session_id: str,
+    api_key: Any = Depends(get_api_key)
+):
+    """
+    删除会话
+    
+    Args:
+        session_id: 会话ID
+        api_key: API密钥
+        
+    Returns:
+        None
+    """
+    global session_manager
+    
+    if session_manager is None:
+        raise HTTPException(status_code=503, detail="会话状态管理器未初始化。请检查服务器日志。")
+        
+    if session_manager.delete_session(session_id):
+        return None
+    else:
+        raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
+
+@app.get("/v1/sessions/{session_id}", 
+         response_model=SessionResponse,
+         summary="获取会话信息",
+         tags=["Sessions"])
+def get_session_info(
+    session_id: str,
+    api_key: Any = Depends(get_api_key)
+):
+    """
+    获取会话信息
+    
+    Args:
+        session_id: 会话ID
+        api_key: API密钥
+        
+    Returns:
+        SessionResponse: 会话信息
+    """
+    global session_manager
+    
+    if session_manager is None:
+        raise HTTPException(status_code=503, detail="会话状态管理器未初始化。请检查服务器日志。")
+        
+    if session_id not in session_manager.sessions:
+        raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
+        
+    session = session_manager.sessions[session_id]
+    
+    return SessionResponse(
+        session_id=session_id,
+        created_at=int(session["created_at"]),
+        last_accessed=int(session["last_accessed"]),
+        expires_at=int(session_manager.session_timeouts[session_id])
     )
 
 @app.get("/api/suggestions", 
