@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from pathlib import Path
 from tempfile import SpooledTemporaryFile
+import asyncio
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -138,7 +139,6 @@ def create_chat_completion(
     """
     Handles chat completion requests in an OpenAI-compatible format.
 
-    Note: Streaming is not currently supported.
     Note: `model` in request is ignored; the engine's loaded model is used.
     """
     global session_manager
@@ -147,7 +147,10 @@ def create_chat_completion(
         raise HTTPException(status_code=503, detail="会话状态管理器未初始化。请检查服务器日志。")
     
     if request.stream:
-        raise HTTPException(status_code=400, detail="Streaming responses are not supported in this version.")
+        return StreamingResponse(
+            stream_chat_completion(request, api_key, db),
+            media_type="text/event-stream"
+        )
 
     request_id = f"chatcmpl-{uuid.uuid4()}"
     created_time = int(time.time())
@@ -237,6 +240,103 @@ def create_chat_completion(
         usage=usage,
         session_id=session_id
     )
+
+async def stream_chat_completion(
+    request: ChatCompletionRequest,
+    api_key: Any,
+    db: Session
+):
+    """
+    流式处理聊天完成请求
+    """
+    global session_manager
+    
+    request_id = f"chatcmpl-{uuid.uuid4()}"
+    created_time = int(time.time())
+    
+    # 获取或创建会话
+    session_id = request.session_id
+    if session_id:
+        # 尝试获取现有会话
+        engine = session_manager.get_session(session_id)
+        if engine is None:
+            # 会话不存在，创建新会话
+            session_id = session_manager.create_session(session_id)
+            engine = session_manager.get_session(session_id)
+    else:
+        # 创建新会话
+        session_id = session_manager.create_session()
+        engine = session_manager.get_session(session_id)
+    
+    if engine is None:
+        yield f"data: {json.dumps({'error': {'message': '无法创建或获取会话。请检查服务器日志。', 'code': 'session_error'}})}\n\n"
+        return
+    
+    if engine.llm_interface is None:
+        yield f"data: {json.dumps({'error': {'message': 'KimiEngine not fully initialized. Try again in a moment.', 'code': 'engine_error'}})}\n\n"
+        return
+    
+    # 处理消息
+    last_user_message = None
+    for message in request.messages:
+        if message.role == "system":
+            # Ingest system messages (potentially long documents)
+            print(f"Ingesting system message (length {len(message.content)})...")
+            engine.ingest(message.content)
+        elif message.role == "user":
+            # Keep track of the last user message to run chat
+            last_user_message = message.content
+        elif message.role == "assistant":
+            # Add assistant messages to history *after* potential ingest
+            # This assumes assistant messages don't trigger ingest
+            engine.conversation_history.append(message.dict())
+
+    if not last_user_message:
+        yield f"data: {json.dumps({'error': {'message': 'No user message found in the request.', 'code': 'invalid_request'}})}\n\n"
+        return
+
+    # 发送初始响应
+    yield f"data: {json.dumps({'id': request_id, 'object': 'chat.completion.chunk', 'created': created_time, 'model': engine_model_name, 'choices': [{'index': 0, 'delta': {'content': ''}, 'finish_reason': None}]})}\n\n"
+
+    # 使用流式生成
+    try:
+        # 检查引擎是否支持流式生成
+        if not hasattr(engine, 'stream_chat') or not callable(engine.stream_chat):
+            # 如果不支持流式生成，则使用普通chat并模拟流式输出
+            completion_text = engine.chat(last_user_message)
+            # 模拟流式输出，每10个字符发送一次
+            for i in range(0, len(completion_text), 10):
+                chunk = completion_text[i:i+10]
+                yield f"data: {json.dumps({'id': request_id, 'object': 'chat.completion.chunk', 'created': created_time, 'model': engine_model_name, 'choices': [{'index': 0, 'delta': {'content': chunk}, 'finish_reason': None}]})}\n\n"
+                await asyncio.sleep(0.05)  # 添加小延迟以模拟流式输出
+        else:
+            # 使用引擎的流式生成功能
+            async for chunk in engine.stream_chat(last_user_message):
+                yield f"data: {json.dumps({'id': request_id, 'object': 'chat.completion.chunk', 'created': created_time, 'model': engine_model_name, 'choices': [{'index': 0, 'delta': {'content': chunk}, 'finish_reason': None}]})}\n\n"
+        
+        # 发送完成标记
+        yield f"data: {json.dumps({'id': request_id, 'object': 'chat.completion.chunk', 'created': created_time, 'model': engine_model_name, 'choices': [{'index': 0, 'delta': {}, 'finish_reason': 'stop'}]})}\n\n"
+        
+        # 记录API使用情况（简化版，实际使用中可能需要更精确的计算）
+        try:
+            record_api_usage(
+                db=db, 
+                user_id=api_key.user_id, 
+                api_key_id=api_key.id, 
+                endpoint="/v1/chat/completions", 
+                prompt_tokens=engine.token_counter.count_tokens(last_user_message), 
+                completion_tokens=engine.token_counter.count_tokens(engine.conversation_history[-1]["content"]) if engine.conversation_history else 0
+            )
+        except Exception as usage_error:
+            logger.error(f"记录API使用情况失败: {usage_error}")
+            
+    except Exception as e:
+        logger.error(f"Error during streaming: {e}")
+        import traceback
+        traceback.print_exc()
+        yield f"data: {json.dumps({'error': {'message': f'Error generating completion: {e}', 'code': 'completion_error'}})}\n\n"
+    
+    yield "data: [DONE]\n\n"
 
 # 添加会话管理API
 @app.post("/v1/sessions", 

@@ -2,6 +2,7 @@ from typing import Dict, List, Any, Optional, Tuple
 import os
 import json
 import logging
+import asyncio
 
 from openkimi.core.processor import TextProcessor
 from openkimi.core.rag import RAGManager
@@ -270,6 +271,71 @@ class KimiEngine:
         
         return solution
     
+    async def stream_chat(self, query: str):
+        """
+        流式处理用户查询并生成回复
+        
+        Args:
+            query: 用户查询
+            
+        Yields:
+            str: 生成的回复片段
+        """
+        logger.info(f"Streaming chat for query: '{query[:50]}...'")
+        # 添加用户查询到会话历史
+        self.conversation_history.append({"role": "user", "content": query})
+        
+        # 从主 RAG 检索相关信息
+        rag_top_k = self.config.get('rag', {}).get('top_k', 3)
+        rag_context = self.rag_manager.retrieve(query, top_k=rag_top_k)
+        logger.info(f"Retrieved {len(rag_context)} relevant context(s) from RAG.")
+        
+        # 获取最近的会话内容作为上下文
+        context = self._get_recent_context(self.max_prompt_tokens // 2)
+        
+        # 准备框架生成上下文
+        framework_input_context = context
+        framework_input_context_prepared = self._prepare_llm_input(framework_input_context)
+        logger.info("Generating solution framework...")
+        framework = self.framework_generator.generate_framework(query, framework_input_context_prepared)
+        
+        # 准备解决方案生成上下文
+        solution_useful_context = context
+        
+        # 检查LLM接口是否支持流式生成
+        if hasattr(self.llm_interface, 'stream_generate') and callable(self.llm_interface.stream_generate):
+            # 使用LLM接口的流式生成功能
+            full_response = ""
+            async for chunk in self.llm_interface.stream_generate(
+                query, 
+                context=solution_useful_context,
+                framework=framework,
+                rag_context=rag_context
+            ):
+                full_response += chunk
+                yield chunk
+                
+            # 添加完整回复到会话历史
+            self.conversation_history.append({"role": "assistant", "content": full_response})
+        else:
+            # 如果不支持流式生成，则使用普通chat并模拟流式输出
+            solution = self.framework_generator.generate_solution_mcp(
+                query, 
+                framework, 
+                useful_context=solution_useful_context, 
+                rag_context=rag_context,
+                num_candidates=self.mcp_candidates
+            )
+            
+            # 模拟流式输出，每10个字符发送一次
+            for i in range(0, len(solution), 10):
+                chunk = solution[i:i+10]
+                yield chunk
+                await asyncio.sleep(0.05)  # 添加小延迟以模拟流式输出
+                
+            # 添加完整回复到会话历史
+            self.conversation_history.append({"role": "assistant", "content": solution})
+        
     def _get_recent_context(self, max_tokens: int) -> str:
         """ Gets recent conversation history, ensuring it fits max_tokens. """
         recent_messages_text = []

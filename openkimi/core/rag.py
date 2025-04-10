@@ -4,6 +4,8 @@ from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 import logging
 import traceback
+import faiss
+from .models.base import BaseModel
 
 # 导入FAISS库
 try:
@@ -17,30 +19,45 @@ from openkimi.utils.llm_interface import LLMInterface
 from openkimi.utils.prompt_loader import load_prompt
 
 class RAGManager:
-    """RAG管理器：负责存储和检索文本块，使用FAISS进行高效向量检索"""
+    """增强版RAG管理器，支持递归RAG和上下文长度检查"""
     
-    def __init__(self, llm_interface: LLMInterface, embedding_model_name: str = 'all-MiniLM-L6-v2', use_faiss: bool = True):
-        """
-        初始化RAG管理器
+    def __init__(
+        self,
+        model: BaseModel,
+        embedding_model_name: str = "all-MiniLM-L6-v2",
+        use_faiss: bool = True,
+        max_chunk_size: int = 512,
+        overlap_size: int = 50,
+        similarity_threshold: float = 0.7
+    ):
+        """初始化RAG管理器
         
         Args:
-            llm_interface: LLM接口，用于生成摘要
-            embedding_model_name: 用于生成文本嵌入的Sentence Transformer模型名称
-            use_faiss: 是否使用FAISS索引（如果可用）
+            model: 用于生成摘要的模型
+            embedding_model_name: 用于生成embeddings的模型名称
+            use_faiss: 是否使用FAISS进行向量检索
+            max_chunk_size: 文本分块的最大大小
+            overlap_size: 文本块之间的重叠大小
+            similarity_threshold: 相似度阈值
         """
         self.logger = logging.getLogger(__name__)
         
-        if llm_interface is None:
-            self.logger.error("RAGManager初始化失败: llm_interface为None")
-            raise ValueError("LLM接口不能为None")
+        if model is None:
+            self.logger.error("RAGManager初始化失败: model为None")
+            raise ValueError("模型不能为None")
             
-        self.llm_interface = llm_interface
-        self.rag_store: Dict[str, str] = {}  # 摘要 -> 原文本
-        self.summary_vectors: Dict[str, np.ndarray] = {} # 摘要 -> 向量
-        self.summaries_list: List[str] = []  # 保存摘要顺序，便于FAISS检索后映射
-        self.use_faiss = use_faiss and FAISS_AVAILABLE
-        self.index = None  # FAISS索引
-        self.vector_dimension = None  # 向量维度，由embedding模型决定
+        self.model = model
+        self.embedding_model = SentenceTransformer(embedding_model_name)
+        self.use_faiss = use_faiss
+        self.max_chunk_size = max_chunk_size
+        self.overlap_size = overlap_size
+        self.similarity_threshold = similarity_threshold
+        
+        # 初始化向量存储
+        self.embeddings = []
+        self.texts = []
+        if use_faiss:
+            self.index = faiss.IndexFlatL2(self.embedding_model.get_sentence_embedding_dimension())
         
         # 尝试加载embedding模型
         try:
@@ -110,6 +127,120 @@ class RAGManager:
             self.use_faiss = False
             self.logger.warning("回退到sklearn进行向量检索")
         
+    async def add_text(self, text: str) -> None:
+        """添加文本到RAG存储
+        
+        Args:
+            text: 要添加的文本
+        """
+        # 检查文本长度，如果超过模型的最大上下文长度，进行递归RAG
+        if len(text.split()) > self.model.max_context_length:
+            text = await self._recursive_rag_compress(text)
+            
+        # 分块处理文本
+        chunks = self._split_text(text)
+        
+        # 为每个块生成摘要和embeddings
+        for chunk in chunks:
+            # 生成摘要
+            summary = await self._generate_summary(chunk)
+            
+            # 生成embeddings
+            embedding = self.embedding_model.encode([summary])[0]
+            
+            # 存储文本和embeddings
+            self.texts.append(chunk)
+            self.embeddings.append(embedding)
+            
+            if self.use_faiss:
+                self.index.add(np.array([embedding], dtype=np.float32))
+                
+    async def search(self, query: str, top_k: int = 3) -> List[str]:
+        """搜索相关文本
+        
+        Args:
+            query: 搜索查询
+            top_k: 返回的结果数量
+            
+        Returns:
+            相关文本列表
+        """
+        # 生成查询的embedding
+        query_embedding = self.embedding_model.encode([query])[0]
+        
+        if self.use_faiss:
+            # 使用FAISS进行搜索
+            distances, indices = self.index.search(
+                np.array([query_embedding], dtype=np.float32),
+                min(top_k, len(self.texts))
+            )
+            
+            # 过滤掉相似度低于阈值的结果
+            results = []
+            for i, (distance, idx) in enumerate(zip(distances[0], indices[0])):
+                if idx < len(self.texts):  # 确保索引有效
+                    similarity = 1 / (1 + distance)  # 将距离转换为相似度
+                    if similarity >= self.similarity_threshold:
+                        results.append(self.texts[idx])
+                        
+            return results[:top_k]
+        else:
+            # 使用简单的余弦相似度搜索
+            similarities = []
+            for embedding in self.embeddings:
+                similarity = np.dot(query_embedding, embedding) / (
+                    np.linalg.norm(query_embedding) * np.linalg.norm(embedding)
+                )
+                similarities.append(similarity)
+                
+            # 获取top_k个最相似的结果
+            top_indices = np.argsort(similarities)[-top_k:][::-1]
+            return [self.texts[i] for i in top_indices if similarities[i] >= self.similarity_threshold]
+            
+    def _split_text(self, text: str) -> List[str]:
+        """将文本分割成重叠的块"""
+        words = text.split()
+        chunks = []
+        
+        for i in range(0, len(words), self.max_chunk_size - self.overlap_size):
+            chunk = " ".join(words[i:i + self.max_chunk_size])
+            chunks.append(chunk)
+            
+        return chunks
+        
+    async def _generate_summary(self, text: str) -> str:
+        """生成文本摘要"""
+        prompt = f"""请为以下文本生成一个简洁的摘要，保留关键信息：
+
+{text}
+
+摘要："""
+        
+        return await this.model.generate(prompt)
+        
+    async def _recursive_rag_compress(self, text: str) -> str:
+        """递归RAG压缩
+        
+        如果文本超过模型的最大上下文长度，递归地使用RAG进行压缩
+        """
+        # 分块处理文本
+        chunks = self._split_text(text)
+        
+        # 为每个块生成摘要
+        summaries = []
+        for chunk in chunks:
+            summary = await this._generate_summary(chunk)
+            summaries.append(summary)
+            
+        # 合并摘要
+        compressed_text = "\n\n".join(summaries)
+        
+        # 如果压缩后的文本仍然太长，递归压缩
+        if len(compressed_text.split()) > this.model.max_context_length:
+            return await this._recursive_rag_compress(compressed_text)
+            
+        return compressed_text
+    
     def summarize_text(self, text: str) -> str:
         """
         对文本进行摘要
@@ -122,7 +253,7 @@ class RAGManager:
         """
         # Todo: Add recursive RAG logic if text is too long for summarization LLM
         prompt = self.summarize_prompt_template.format(text=text)
-        summary = self.llm_interface.generate(prompt)
+        summary = self.model.generate(prompt)
         return summary.strip()
     
     def store_text(self, text: str) -> str:
@@ -136,20 +267,20 @@ class RAGManager:
             文本摘要（作为RAG的key）
         """
         summary = self.summarize_text(text)
-        if summary in self.rag_store: # Avoid duplicates, maybe update?
+        if summary in self.texts: # Avoid duplicates, maybe update?
             return summary 
             
-        self.rag_store[summary] = text
+        self.texts.append(summary)
         
         # 生成摘要的向量表示
         summary_embedding = self.embedding_model.encode(summary)
-        self.summary_vectors[summary] = summary_embedding
+        self.embeddings.append(summary_embedding)
         
         # 将向量添加到FAISS索引
         if self.use_faiss and self.index is not None:
             try:
                 # 添加到摘要列表
-                self.summaries_list.append(summary)
+                self.texts.append(summary)
                 
                 # 准备向量数据，需要reshape为2D数组
                 vector_np = np.array([summary_embedding], dtype=np.float32)
@@ -183,13 +314,13 @@ class RAGManager:
             summary = self.summarize_text(text)
             
             # 跳过重复项
-            if summary in self.rag_store:
+            if summary in self.texts:
                 summaries.append(summary)
                 continue
                 
-            self.rag_store[summary] = text
+            self.texts.append(summary)
             summary_embedding = self.embedding_model.encode(summary)
-            self.summary_vectors[summary] = summary_embedding
+            self.embeddings.append(summary_embedding)
             
             summaries.append(summary)
             new_vectors.append(summary_embedding)
@@ -199,7 +330,7 @@ class RAGManager:
         if self.use_faiss and self.index is not None and new_vectors:
             try:
                 # 更新摘要列表
-                self.summaries_list.extend(new_summaries)
+                self.texts.extend(new_summaries)
                 
                 # 准备批量向量数据
                 vectors_np = np.array(new_vectors, dtype=np.float32)
@@ -223,36 +354,36 @@ class RAGManager:
         Returns:
             检索到的文本列表
         """
-        if not self.rag_store:
+        if not self.texts:
             return []
         
         # 如果向量存储为空，直接返回空列表
-        if not self.summary_vectors:
+        if not self.embeddings:
             return []
             
         # 生成查询向量
         query_embedding = self.embedding_model.encode(query)
         
         # 使用FAISS进行检索
-        if self.use_faiss and self.index is not None and len(self.summaries_list) > 0:
+        if self.use_faiss and self.index is not None and len(self.texts) > 0:
             try:
                 # 准备查询向量
                 query_vector = np.array([query_embedding], dtype=np.float32)
                 
                 # 执行搜索，返回距离和索引
-                distances, indices = self.index.search(query_vector, min(top_k, len(self.summaries_list)))
+                distances, indices = self.index.search(query_vector, min(top_k, len(self.texts)))
                 
                 # 获取结果摘要，然后获取对应的原文本
                 results = []
                 for i, idx in enumerate(indices[0]):
-                    if idx < len(self.summaries_list):
-                        summary = self.summaries_list[idx]
+                    if idx < len(self.texts):
+                        summary = self.texts[idx]
                         # 检查距离是否在合理范围内（可选）
                         # 对于L2距离，较小的值表示更相似
                         # if distances[0][i] > max_distance:
                         #    continue
-                        if summary in self.rag_store:
-                            results.append(self.rag_store[summary])
+                        if summary in self.texts:
+                            results.append(summary)
                 
                 self.logger.debug(f"FAISS检索成功，找到{len(results)}个结果")
                 return results
@@ -266,8 +397,8 @@ class RAGManager:
         query_embedding = query_embedding.reshape(1, -1)
         
         # 准备摘要向量
-        summaries = list(self.summary_vectors.keys())
-        summary_embeddings = np.array([self.summary_vectors[s] for s in summaries])
+        summaries = self.texts
+        summary_embeddings = np.array(self.embeddings)
 
         if summary_embeddings.ndim == 1: # 处理只有一个存储项的情况
             summary_embeddings = summary_embeddings.reshape(1, -1)
@@ -279,7 +410,7 @@ class RAGManager:
         top_k_indices = np.argsort(similarities)[::-1][:top_k]
         
         # 返回对应的原始文本，排除相似度小于或等于0的结果
-        results = [self.rag_store[summaries[i]] for i in top_k_indices if similarities[i] > 0]
+        results = [self.texts[i] for i in top_k_indices if similarities[i] > 0]
         
         self.logger.debug(f"sklearn检索成功，找到{len(results)}个结果")
         return results 
