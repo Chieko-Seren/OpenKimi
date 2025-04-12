@@ -248,3 +248,6 @@ curl http://localhost:8000/v1/chat/completions \
     ]
   }'
 ```
+
+> [!WARNING]
+> 本项目不是 Starlight Dream 的维护项目，与 Starlight Dream 无任何关系，并且不保障稳定的维护。
