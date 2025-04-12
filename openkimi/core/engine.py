@@ -3,6 +3,7 @@ import os
 import json
 import logging
 import asyncio
+import uuid
 
 from openkimi.core.processor import TextProcessor
 from openkimi.core.rag import RAGManager
@@ -14,39 +15,51 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 class KimiEngine:
-    """OpenKimi主引擎：整合所有模块，提供具有递归RAG和MCP的长对话能力"""
+    """OpenKimi主引擎：整合所有模块，提供具有递归RAG和MPR的长对话能力"""
     
     def __init__(self, 
                  config_path: Optional[str] = None, 
                  llm_config: Optional[Dict] = None,
                  processor_config: Optional[Dict] = None,
                  rag_config: Optional[Dict] = None,
-                 mcp_candidates: int = 1, # Default to 1 (no MCP) for simplicity
+                 mpr_candidates: int = 1, # Default to 1 (no MPR) for simplicity
                  session_id: Optional[str] = None # 添加会话ID支持
                  ):
         """
-        初始化Kimi引擎
+        初始化OpenKimi引擎
         
         Args:
-            config_path: 配置文件路径 (JSON)
-            llm_config: LLM 配置字典 (覆盖配置文件)
-            processor_config: 文本处理器配置字典 (覆盖配置文件)
-            rag_config: RAG 配置字典 (覆盖配置文件)
-            mcp_candidates: MCP候选方案数量 (1表示禁用MCP)
-            session_id: 会话ID，用于标识会话
+            config_path: 配置文件路径，可选
+            llm_config: LLM配置字典，可选，覆盖配置文件中的LLM配置
+            processor_config: 处理器配置字典，可选，覆盖配置文件中的处理器配置
+            rag_config: RAG配置字典，可选，覆盖配置文件中的RAG配置
+            mpr_candidates: MPR候选数量，默认为1（禁用MPR）
+            session_id: 会话ID，可选，用于追踪多个会话
         """
+        self.logger = logging.getLogger(__name__)
+        
         # 加载配置
         self.config = self._load_config(config_path)
         
-        # Overwrite with specific configs if provided
-        if llm_config: self.config['llm'] = {**self.config.get('llm', {}), **llm_config}
-        if processor_config: self.config['processor'] = {**self.config.get('processor', {}), **processor_config}
-        if rag_config: self.config['rag'] = {**self.config.get('rag', {}), **rag_config}
+        # 覆盖配置文件中的设置（如果提供了参数）
+        if llm_config:
+            self.config["llm"] = llm_config
+        if processor_config:
+            self.config["processor"] = processor_config
+        if rag_config:
+            self.config["rag"] = rag_config
+            
+        # MPR候选数量（命令行参数优先）
+        self.mpr_candidates = mpr_candidates
+        # 如果命令行没指定，但配置文件中有，则使用配置文件的值
+        if mpr_candidates == 1 and "mpr_candidates" in self.config:
+            self.mpr_candidates = self.config["mpr_candidates"]
+            
+        # 会话ID
+        self.session_id = session_id or str(uuid.uuid4())
         
-        self.mcp_candidates = mcp_candidates
-        self.session_id = session_id
         logger.info(f"Initializing KimiEngine with config: {self.config}")
-        logger.info(f"MCP candidates: {self.mcp_candidates}")
+        logger.info(f"MPR candidates: {self.mpr_candidates}")
         if session_id:
             logger.info(f"Session ID: {session_id}")
                 
@@ -107,7 +120,7 @@ class KimiEngine:
             "llm": {"type": "dummy"},
             "processor": {"batch_size": 512, "entropy_threshold": 3.0},
             "rag": {"embedding_model": "all-MiniLM-L6-v2", "top_k": 3, "use_faiss": True},
-            "mcp_candidates": 1 # Default to no MCP
+            "mpr_candidates": 1 # Default to no MPR
         }
         
         if not config_path:
@@ -125,9 +138,14 @@ class KimiEngine:
                         merged_config[key].update(value)
                     else:
                         merged_config[key] = value
-                # Update mcp_candidates if present in the loaded config
-                if "mcp_candidates" in config:
-                     self.mcp_candidates = config["mcp_candidates"]
+                # Update mpr_candidates if present in the loaded config
+                if "mpr_candidates" in config:
+                     self.mpr_candidates = config["mpr_candidates"]
+                     
+                # 向后兼容：如果配置中有mcp_candidates，但没有mpr_candidates
+                if "mcp_candidates" in config and "mpr_candidates" not in config:
+                     self.mpr_candidates = config["mcp_candidates"]
+                     
                 return merged_config
         except FileNotFoundError:
             logger.warning(f"Config file not found at {config_path}, using default config.")
@@ -225,7 +243,7 @@ class KimiEngine:
         
     def chat(self, query: str) -> str:
         """
-        处理用户查询并生成回复 (with recursive RAG and optional MCP)
+        处理用户查询并生成回复 (with recursive RAG and optional MPR)
         """
         logger.info(f"Received chat query: '{query[:50]}...'")
         # 添加用户查询到会话历史
@@ -248,8 +266,8 @@ class KimiEngine:
         framework = self.framework_generator.generate_framework(query, framework_input_context_prepared)
         logger.info(f"Generated framework: {framework[:100]}...")
         
-        # --- Solution Generation (with MCP) --- 
-        logger.info(f"Generating solution using MCP (candidates={self.mcp_candidates})...")
+        # --- Solution Generation (with MPR) --- 
+        logger.info(f"Generating solution using MPR (candidates={self.mpr_candidates})...")
         # Useful context for solution might be different, maybe more focused history + RAG
         solution_useful_context = context # For now, reuse the context from framework gen
         
@@ -257,12 +275,12 @@ class KimiEngine:
         # This is currently missing in the framework.py implementation and needs adding there.
         # For now, we assume the framework generator handles its own prompt limits internally.
         
-        solution = self.framework_generator.generate_solution_mcp(
+        solution = self.framework_generator.generate_solution_mpr(
             query, 
             framework, 
             useful_context=solution_useful_context, 
             rag_context=rag_context, # Pass retrieved snippets
-            num_candidates=self.mcp_candidates
+            num_candidates=self.mpr_candidates
         )
         logger.info(f"Generated final solution: {solution[:100]}...")
         
@@ -271,17 +289,18 @@ class KimiEngine:
         
         return solution
     
-    async def stream_chat(self, query: str):
+    async def stream_chat(self, query: str) -> AsyncGenerator[str, None]:
         """
-        流式处理用户查询并生成回复
+        流式处理用户查询并生成回复 (支持异步生成和流式输出)
         
         Args:
             query: 用户查询
             
         Yields:
-            str: 生成的回复片段
+            生成的回复片段
         """
-        logger.info(f"Streaming chat for query: '{query[:50]}...'")
+        logger.info(f"Received stream chat query: '{query[:50]}...'")
+        
         # 添加用户查询到会话历史
         self.conversation_history.append({"role": "user", "content": query})
         
@@ -290,16 +309,18 @@ class KimiEngine:
         rag_context = self.rag_manager.retrieve(query, top_k=rag_top_k)
         logger.info(f"Retrieved {len(rag_context)} relevant context(s) from RAG.")
         
-        # 获取最近的会话内容作为上下文
-        context = self._get_recent_context(self.max_prompt_tokens // 2)
+        # 获取最近的会话内容作为上下文 (fitting within limits)
+        context = self._get_recent_context(self.max_prompt_tokens // 2) # Allocate roughly half for history
+        logger.debug(f"Recent context length: {self.token_counter.count_tokens(context)} tokens")
         
-        # 准备框架生成上下文
+        # 生成解决方案框架
         framework_input_context = context
         framework_input_context_prepared = self._prepare_llm_input(framework_input_context)
         logger.info("Generating solution framework...")
         framework = self.framework_generator.generate_framework(query, framework_input_context_prepared)
+        logger.info(f"Generated framework: {framework[:100]}...")
         
-        # 准备解决方案生成上下文
+        # 准备生成解决方案的上下文
         solution_useful_context = context
         
         # 检查LLM接口是否支持流式生成
@@ -319,12 +340,12 @@ class KimiEngine:
             self.conversation_history.append({"role": "assistant", "content": full_response})
         else:
             # 如果不支持流式生成，则使用普通chat并模拟流式输出
-            solution = self.framework_generator.generate_solution_mcp(
+            solution = self.framework_generator.generate_solution_mpr(
                 query, 
                 framework, 
                 useful_context=solution_useful_context, 
                 rag_context=rag_context,
-                num_candidates=self.mcp_candidates
+                num_candidates=self.mpr_candidates
             )
             
             # 模拟流式输出，每10个字符发送一次

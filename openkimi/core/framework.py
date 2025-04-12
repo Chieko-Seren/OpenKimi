@@ -6,7 +6,7 @@ import random
 import numpy as np
 
 class FrameworkGenerator:
-    """增强版框架生成器，支持多种MCP策略"""
+    """增强版框架生成器，支持多种MPR策略"""
     
     def __init__(self, model: BaseModel):
         self.model = model
@@ -39,7 +39,7 @@ class FrameworkGenerator:
 """
         return await self.model.generate(prompt)
         
-    async def generate_solution_mcp(
+    async def generate_solution_mpr(
         self,
         query: str,
         framework: str,
@@ -49,7 +49,7 @@ class FrameworkGenerator:
         context_strategy: str = "diversity",
         synthesis_strategy: str = "hierarchical"
     ) -> str:
-        """使用增强的MCP策略生成解决方案
+        """使用增强的MPR策略生成解决方案
         
         Args:
             query: 用户查询

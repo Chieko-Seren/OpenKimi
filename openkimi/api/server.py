@@ -109,7 +109,7 @@ def initialize_engine(args):
         # 创建引擎工厂函数
         def engine_factory():
             return KimiEngine(
-                config_path=args.config,
+            config_path=args.config,
                 mcp_candidates=args.mcp_candidates if hasattr(args, 'mcp_candidates') else 1
             )
             
@@ -145,7 +145,7 @@ def create_chat_completion(
     
     if session_manager is None:
         raise HTTPException(status_code=503, detail="会话状态管理器未初始化。请检查服务器日志。")
-    
+
     if request.stream:
         return StreamingResponse(
             stream_chat_completion(request, api_key, db),
@@ -154,7 +154,7 @@ def create_chat_completion(
 
     request_id = f"chatcmpl-{uuid.uuid4()}"
     created_time = int(time.time())
-    
+
     # 获取或创建会话
     session_id = request.session_id
     if session_id:
