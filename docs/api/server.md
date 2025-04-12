@@ -1,133 +1,81 @@
-# API 服务器
+# 服务器 API 参考
 
-OpenKimi 提供了一个与 OpenAI 兼容的 API 服务器，可以将 OpenKimi 的无限上下文能力作为服务提供给其他应用程序。
+本页详细介绍 `openkimi.api` 模块提供的功能，主要是OpenAI兼容API服务器。
 
-## 启动服务器
+## API服务器
 
-### 使用命令行工具
+`openkimi.api.server` 模块提供了启动OpenAI兼容API服务器的功能。
 
-```bash
-# 基本用法
-python run_server.py --config examples/config.json
+### 启动脚本
 
-# 指定主机和端口
-python run_server.py --config examples/config.json --host 0.0.0.0 --port 8000
-
-# 启用 MCP
-python run_server.py --config examples/config.json --mcp-candidates 3
-
-# 开发模式（自动重载）
-python run_server.py --config examples/config.json --reload
-```
-
-### 使用 Python 模块
+服务器可以通过以下命令启动：
 
 ```bash
-python -m openkimi.api.server --config examples/config.json
+python -m openkimi.api.server [选项]
 ```
 
-## API 端点
+详细选项和使用方法请参考[API服务器指南](../guides/api_server.md)。
 
-### 聊天完成 API
+## API路由器
 
-```
-POST /v1/chat/completions
-```
+`openkimi.api.routers` 模块包含用于构建FastAPI应用的路由器。
 
-**请求格式：**
+### `create_chat_router`
 
-```json
-{
-  "model": "openkimi-model",
-  "messages": [
-    {"role": "system", "content": "这是长文档内容..."},
-    {"role": "user", "content": "请根据文档回答这个问题"}
-  ]
-}
-```
-
-**响应格式：**
-
-```json
-{
-  "id": "chatcmpl-123456789",
-  "object": "chat.completion",
-  "created": 1677858242,
-  "model": "openkimi-model",
-  "choices": [
-    {
-      "index": 0,
-      "message": {
-        "role": "assistant",
-        "content": "这是回答内容..."
-      },
-      "finish_reason": "stop"
-    }
-  ],
-  "usage": {
-    "prompt_tokens": 1024,
-    "completion_tokens": 256,
-    "total_tokens": 1280
-  }
-}
-```
-
-**示例使用（curl）：**
-
-```bash
-curl http://localhost:8000/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "openkimi-model", 
-    "messages": [
-      {"role": "system", "content": "这是需要处理的长文档内容..."},
-      {"role": "user", "content": "请根据文档回答这个问题？"}
-    ]
-  }'
-```
-
-### 健康检查 API
-
-```
-GET /health
-```
-
-**响应：**
-
-```json
-{
-  "status": "healthy",
-  "engine": "ready"
-}
-```
-
-## 使用 Python 客户端
-
-你可以使用标准的 OpenAI 客户端库与 OpenKimi API 服务器交互：
+创建处理`/v1/chat/completions`端点的FastAPI路由器。
 
 ```python
-import openai
+from fastapi import APIRouter
+from openkimi import KimiEngine
 
-# 配置客户端
-openai.api_key = "任意值"  # OpenKimi 服务器不验证 API 密钥
-openai.api_base = "http://localhost:8000/v1"  # 指向 OpenKimi 服务器
-
-# 发送请求
-response = openai.ChatCompletion.create(
-    model="openkimi-model",
-    messages=[
-        {"role": "system", "content": "这里是长文档内容..."},
-        {"role": "user", "content": "请分析这个文档的主要观点"}
-    ]
-)
-
-# 处理响应
-print(response.choices[0].message.content)
+def create_chat_router(engine: KimiEngine) -> APIRouter:
+    pass
 ```
 
-## 注意事项
+- **参数**：
+    - `engine` (KimiEngine): 已初始化的`KimiEngine`实例。
+- **返回**：
+    - 一个`fastapi.APIRouter`实例，包含了处理聊天请求的逻辑。
 
-1. 当前 API 实现较为简单，每次请求会重置引擎状态并重新处理 `system` 消息中的文档，效率不高。
-2. 服务器不支持流式输出（`stream=True`）。
-3. 所有请求共享同一个 KimiEngine 实例，但每个请求会重置会话状态。
-4. API 服务器默认不进行身份验证，在生产环境中应添加适当的安全措施。 
+### 使用示例
+
+```python
+from fastapi import FastAPI
+from openkimi import KimiEngine
+from openkimi.api.routers import create_chat_router
+
+# 初始化引擎
+engine = KimiEngine(config_path="config.json")
+
+# 创建FastAPI应用
+app = FastAPI()
+
+# 创建并包含聊天路由器
+chat_router = create_chat_router(engine)
+app.include_router(chat_router)
+
+# (可选) 添加其他自定义路由
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}
+
+# 运行服务器 (例如使用 uvicorn)
+# uvicorn main:app --reload
+```
+
+## 请求和响应模型
+
+API服务器使用Pydantic模型来定义请求和响应体，与OpenAI API兼容。
+
+### 主要模型 (部分)
+
+- `ChatCompletionRequest`: `/v1/chat/completions`的请求体模型。
+- `ChatCompletionResponse`: `/v1/chat/completions`的非流式响应模型。
+- `ChatCompletionChunkResponse`: `/v1/chat/completions`的流式响应块模型。
+- `ChatMessage`: 消息对象模型（`role`, `content`）。
+
+这些模型主要在`openkimi/api/models.py`中定义（如果存在），或直接在路由器代码中使用。
+
+## 总结
+
+`openkimi.api`模块使得将OpenKimi的功能暴露为标准化的、与OpenAI兼容的API服务变得简单。这允许你使用任何支持OpenAI API的客户端库或工具与OpenKimi进行交互。 
