@@ -2,7 +2,7 @@
 
 <h1> OpenKimi ✨ </h1>
 
-_让LLM突破上下文长度限制的宇宙飞船_
+_让LLM突破上下文长度限制的宇宙飞船_，顺便一提，我们没有股权纠纷 :)
 
 [![License](https://img.shields.io/badge/License-MIT%20License-blue.svg)](https://opensource.org/licenses/MIT%20License)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
